@@ -80,6 +80,7 @@ export function useWebPeer() {
     [forceRelay, setForceRelay] = useState(false);
   const [modes, setModes] = useState<Record<string, string>>({}),
     [messages, setMessages] = useState<StoredMessage[]>([]),
+    [unreadConversations, setUnreadConversations] = useState<string[]>([]),
     [logs, setLogs] = useState<string[]>([]),
     [error, setError] = useState(""),
     [sending, setSending] = useState(false),
@@ -152,9 +153,18 @@ export function useWebPeer() {
       ]);
       if (active !== store.current) return;
       setMessages(rows);
+      setUnreadConversations(active.listUnreadConversations());
       setCalls(active.listCalls());
       setContacts(savedContacts);
       setBlocked(blockedPeers);
+    } catch (error) {
+      setError(String(error));
+    }
+  }, []);
+  const markConversationRead = useCallback((key: string) => {
+    try {
+      if (store.current.markConversationRead(key))
+        setUnreadConversations(store.current.listUnreadConversations());
     } catch (error) {
       setError(String(error));
     }
@@ -390,7 +400,16 @@ export function useWebPeer() {
                   : "Đã thiết lập đường DIRECT.",
             }));
           }
-          if (event.kind === "message") void refresh();
+          if (event.kind === "message") {
+            if (event.message) {
+              try {
+                store.current.markUnread(event.message);
+              } catch (error) {
+                log(`Không lưu được trạng thái chưa đọc: ${String(error)}`);
+              }
+            }
+            void refresh();
+          }
           if (event.kind === "log") {
             log(`[${activeId}] ${event.text}`);
             const text = event.text || "",
@@ -472,6 +491,7 @@ export function useWebPeer() {
     setOnline([]);
     setProfiles([]);
     setMessages([]);
+    setUnreadConversations([]);
     setCalls([]);
     setDirectReasons({});
     setContacts([]);
@@ -930,6 +950,8 @@ export function useWebPeer() {
     retryDirect,
     calls,
     messages,
+    unreadConversations,
+    markConversationRead,
     visible,
     logs,
     error,

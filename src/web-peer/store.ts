@@ -195,6 +195,53 @@ export class WebStore implements DirectChatStore, IdentityStore {
   private get blockedKey() {
     return `ds01-direct-blocked-v1-${this.scope}`;
   }
+  private get unreadKey() {
+    return `ds01-unread-conversations-v1-${this.scope}`;
+  }
+  listUnreadConversations(): string[] {
+    try {
+      const value: unknown = JSON.parse(
+        localStorage.getItem(this.unreadKey) || "[]",
+      );
+      return Array.isArray(value)
+        ? [
+            ...new Set(
+              value.filter(
+                (key): key is string =>
+                  typeof key === "string" && /^(peer|group):.{1,80}$/.test(key),
+              ),
+            ),
+          ]
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  markUnread(row: StoredMessage) {
+    const message = row.message;
+    if (
+      row.status !== "received" ||
+      message.senderId === this.scope ||
+      message.receiverId !== this.scope ||
+      !["text", "attachment"].includes(message.type)
+    )
+      return;
+    const key = message.groupId
+      ? `group:${message.groupId}`
+      : `peer:${message.senderId}`;
+    const unread = this.listUnreadConversations();
+    if (unread.includes(key)) return;
+    localStorage.setItem(this.unreadKey, JSON.stringify([...unread, key]));
+  }
+  markConversationRead(key: string) {
+    const unread = this.listUnreadConversations();
+    if (!unread.includes(key)) return false;
+    localStorage.setItem(
+      this.unreadKey,
+      JSON.stringify(unread.filter((item) => item !== key)),
+    );
+    return true;
+  }
   private read(): StoredMessage[] {
     try {
       const rows: unknown = JSON.parse(localStorage.getItem(this.key) || "[]");
@@ -339,6 +386,7 @@ export class WebStore implements DirectChatStore, IdentityStore {
     );
     const calls = previousCalls.filter((call) => call.peerId !== otherPeerId);
     localStorage.setItem(`${this.key}-calls`, JSON.stringify(calls));
+    this.markConversationRead(`peer:${otherPeerId}`);
     this.write(
       rows.filter(
         (row) =>

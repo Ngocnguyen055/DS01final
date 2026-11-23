@@ -9,6 +9,16 @@ import { chatTimeline } from "./chatTimeline.ts";
 import { MAX_GROUP_CALL_PEERS } from "../shared/groupCallProtocol.ts";
 import { AdvancedPanel } from "./AdvancedPanel.tsx";
 import { Icon } from "./Icon.tsx";
+function UnreadDot() {
+  return (
+    <span
+      className="unread-dot"
+      role="img"
+      aria-label="Có tin nhắn chưa đọc"
+      title="Có tin nhắn chưa đọc"
+    />
+  );
+}
 function Avatar({
   name,
   online,
@@ -112,6 +122,42 @@ export function App() {
     [theme, setTheme] = useState(localStorage.getItem("ds01-theme") || "light");
   const end = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null);
+  const activeConversation = p.groupTarget
+    ? `group:${p.groupTarget}`
+    : p.target
+      ? `peer:${p.target}`
+      : "";
+  useEffect(() => {
+    const mobile = window.matchMedia("(max-width: 760px)");
+    const markRead = () => {
+      if (
+        p.hasSession &&
+        activeConversation &&
+        !document.hidden &&
+        (!mobile.matches || mobileChat) &&
+        !dialog &&
+        !showDiagnostics
+      )
+        p.markConversationRead(activeConversation);
+    };
+    markRead();
+    document.addEventListener("visibilitychange", markRead);
+    window.addEventListener("focus", markRead);
+    mobile.addEventListener("change", markRead);
+    return () => {
+      document.removeEventListener("visibilitychange", markRead);
+      window.removeEventListener("focus", markRead);
+      mobile.removeEventListener("change", markRead);
+    };
+  }, [
+    p.hasSession,
+    p.markConversationRead,
+    p.unreadConversations,
+    activeConversation,
+    mobileChat,
+    dialog,
+    showDiagnostics,
+  ]);
   useEffect(() => {
     if (!dialog && !showDiagnostics) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -310,6 +356,7 @@ export function App() {
                 ) : p.modes[id] === "DIRECT" ? (
                   <span className="tiny-direct" title="Kết nối trực tiếp" />
                 ) : null}
+                {p.unreadConversations.includes(`peer:${id}`) && <UnreadDot />}
               </button>
             ))}
           {!p.knownPeers.length && (
@@ -355,6 +402,9 @@ export function App() {
                       : "Bạn đã rời nhóm"}
                   </small>
                 </span>
+                {p.unreadConversations.includes(`group:${group.id}`) && (
+                  <UnreadDot />
+                )}
               </button>
             ))}
         </nav>
@@ -431,6 +481,7 @@ export function App() {
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             >
               <Icon name="sidebar" size={18} />
+              {p.unreadConversations.length > 0 && <UnreadDot />}
             </button>
           )}
           <div className="breadcrumb">
@@ -531,6 +582,7 @@ export function App() {
                   onClick={() => setMobileChat(false)}
                 >
                   <Icon name="arrow" />
+                  {p.unreadConversations.length > 0 && <UnreadDot />}
                 </button>
                 <Avatar
                   name={title}

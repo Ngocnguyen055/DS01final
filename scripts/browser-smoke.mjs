@@ -342,6 +342,11 @@ try {
       session,
       `(()=>{const item=[...document.querySelectorAll('nav .conversation')].find(item=>item.querySelector('strong')?.textContent===${JSON.stringify(text)});if(!item)throw Error('Conversation missing');item.click();})()`,
     );
+  const hasUnread = (session, text) =>
+    evaluate(
+      session,
+      `[...document.querySelectorAll('nav .conversation')].some(item=>item.querySelector('strong')?.textContent===${JSON.stringify(text)}&&!!item.querySelector('.unread-dot'))`,
+    );
   const send = async (session, text) => {
     await fill(session, "textarea", text);
     await click(session, ".send-button");
@@ -638,6 +643,56 @@ try {
       !logs.backup.includes(pendingDirect.message.messageId),
   );
   await evaluate(a, "window.qaDelayOfferMs=0");
+
+  await choose(b, "Peer C");
+  await send(a, "QA-UNREAD-DIRECT");
+  await until(() => hasUnread(b, "Peer A"), "unread direct conversation dot");
+  await screenshot(b, "ui-unread-desktop.png");
+  await reload(b);
+  await until(
+    () => hasUnread(b, "Peer A"),
+    "unread conversation survives page reload",
+  );
+  check("a new incoming conversation shows a red dot that survives reload", true);
+  await browserCall("Page.bringToFront", {}, b);
+  await choose(b, "Peer A");
+  await until(() => hasUnread(b, "Peer A").then((value) => !value), "read dot clears");
+  await send(a, "QA-UNREAD-ACTIVE");
+  await until(
+    () => evaluate(b, 'document.querySelector(".messages")?.textContent.includes("QA-UNREAD-ACTIVE")'),
+    "incoming message in the open conversation",
+  );
+  check("opening a conversation clears its dot and visible messages stay read", !(await hasUnread(b, "Peer A")));
+  check("outgoing messages do not mark the sender's conversation unread", !(await hasUnread(a, "Peer B")));
+  await browserCall(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 390, height: 844, deviceScaleFactor: 1, mobile: true },
+    b,
+  );
+  await click(b, 'button[aria-label="Về danh sách"]');
+  await send(a, "QA-UNREAD-MOBILE");
+  await until(() => hasUnread(b, "Peer A"), "mobile list keeps selected chat unread");
+  await screenshot(b, "ui-unread-mobile.png");
+  await choose(b, "Peer A");
+  await until(() => hasUnread(b, "Peer A").then((value) => !value), "mobile opening clears dot");
+  check("mobile list keeps the unread dot until the conversation is opened", true);
+  await browserCall(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 1440, height: 960, deviceScaleFactor: 1, mobile: false },
+    b,
+  );
+  // Reloading B retired its original DataChannel. Restore DIRECT before the
+  // following checks deliberately hold DataChannel ACKs.
+  await click(b, ".diagnostics-link");
+  await evaluate(
+    b,
+    '[...document.querySelectorAll(".diagnostics button")].find(button=>button.textContent.trim()==="Thử kết nối trực tiếp").click()',
+  );
+  await until(
+    () => evaluate(b, 'document.querySelector(".mode-label")?.textContent==="DIRECT"'),
+    "DIRECT restored after unread persistence reload",
+  );
+  await click(b, '.diagnostics button[aria-label="Đóng chẩn đoán"]');
 
   await evaluate(
     b,
@@ -1183,9 +1238,15 @@ try {
       ),
     "group membership",
   );
-  await choose(b, "Team QA");
+  await choose(b, "Peer A");
   await choose(c, "Team QA");
   await send(a, "QA-GROUP-A");
+  await until(() => hasUnread(b, "Team QA"), "unread group conversation dot");
+  await screenshot(b, "ui-unread-group.png");
+  await browserCall("Page.bringToFront", {}, b);
+  await choose(b, "Team QA");
+  await until(() => hasUnread(b, "Team QA").then((value) => !value), "opening group clears dot");
+  check("group messages show a separate unread dot that clears on opening", true);
   await Promise.all([send(b, "QA-CONCURRENT-B"), send(c, "QA-CONCURRENT-C")]);
   await until(async () => {
     const rows = await history(a, "user_qa-a");

@@ -30,6 +30,7 @@
   --sent-ink: #203d33;
   --avatar: #e5e8e8;
   --danger: #a43832;
+  --notification: #dc2626;
   --danger-soft: #faf0ef;
   --shadow: 0 12px 40px #11182712;
 }
@@ -343,6 +344,25 @@ select:focus-visible {
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
+}
+.unread-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--notification);
+  flex-shrink: 0;
+}
+.sidebar-toggle,
+.mobile-back {
+  position: relative;
+}
+.sidebar-toggle .unread-dot,
+.mobile-back .unread-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  box-shadow: 0 0 0 2px var(--panel);
 }
 .sidebar-empty {
   font-size: 13px;
