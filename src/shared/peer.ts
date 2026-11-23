@@ -86,11 +86,14 @@ export class PeerClient {
   private relays = new Map<string, Socket>();
   private activeRelay?: string;
   private relayWaiters = new Set<() => void>();
+  private signalWaiters = new Set<() => void>();
   private signalState: "connecting" | "online" | "reconnecting" | "offline" =
     "offline";
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private registrationRetryTimer?: ReturnType<typeof setTimeout>;
   private refreshTimer?: ReturnType<typeof setInterval>;
-  private registration?: Promise<void>;
+  private signalGeneration = 0;
+  private registration?: { generation: number; promise: Promise<void> };
   private cancelConnect?: (error: Error) => void;
   private files: FileTransfer;
   private peers: string[] = [];
@@ -126,9 +129,11 @@ export class PeerClient {
           const result = await this.overlayCall("dht:key", peerId);
           return (await verifyOverlayRecord(result.result, true)).identity;
         }
-        if (!this.signal?.connected)
-          throw Error("security key directory unavailable");
-        const response = await this.call(this.signal, "key:lookup", peerId);
+        await this.waitForSignaling();
+        const socket = this.signal!,
+          generation = this.signalGeneration;
+        const response = await this.call(socket, "key:lookup", peerId);
+        this.assertSignalingSession(socket, generation);
         if (!response.ok)
           throw Error(
             `${response.error || "security key unavailable"} (peer=${peerId})`,
@@ -301,6 +306,7 @@ export class PeerClient {
           ? "connecting"
           : "reconnecting";
     for (const check of this.relayWaiters) check();
+    for (const check of this.signalWaiters) check();
     this.emit({
       kind: "connection",
       connection: {
@@ -309,6 +315,28 @@ export class PeerClient {
           .length,
         activeRelay: this.activeRelay,
       },
+    });
+  }
+  private async waitForSignaling() {
+    if (this.closed) throw new Error("peer disconnected");
+    if (this.signal?.connected && this.signalState === "online") return;
+    await new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timer);
+        this.signalWaiters.delete(check);
+        if (error) reject(error);
+        else resolve();
+      };
+      const check = () => {
+        if (this.closed) finish(new Error("peer disconnected"));
+        else if (this.signal?.connected && this.signalState === "online") finish();
+      };
+      const timer = setTimeout(
+        () => finish(new SignalingTransportError("signaling readiness timeout")),
+        this.config.connectionWaitTimeoutMs ?? 8000,
+      );
+      this.signalWaiters.add(check);
+      check();
     });
   }
   private async waitForRelay() {
@@ -436,19 +464,44 @@ export class PeerClient {
     });
     this.cancelConnect = fail;
     const timer = setTimeout(() => fail(new Error("signaling timeout")), 8000);
-    this.signal.on("connect", () => {
-      this.secure.invalidatePeers();
+    let registrationRetries = 0;
+    const register = () => {
+      const generation = this.signalGeneration;
       void this.register()
-        .then(ready)
+        .then(() => {
+          if (this.closed || generation !== this.signalGeneration) return;
+          clearTimeout(this.registrationRetryTimer);
+          registrationRetries = 0;
+          ready();
+        })
         .catch((error) => {
+          if (this.closed || generation !== this.signalGeneration) return;
           this.log(`register failed: ${String(error)}`);
-
-          if (!this.closed && !this.signal?.connected) return;
-          this.signalState = "offline";
-          this.connection();
-          this.signal?.disconnect();
-          fail(error instanceof Error ? error : new Error(String(error)));
+          if (error instanceof SignalingTransportError) {
+            this.signalState = "reconnecting";
+            this.connection();
+            clearTimeout(this.registrationRetryTimer);
+            this.registrationRetryTimer = setTimeout(() => {
+              if (
+                !this.closed &&
+                generation === this.signalGeneration &&
+                this.signal?.connected
+              )
+                register();
+            }, Math.min(250 * 2 ** Math.min(registrationRetries++, 4), 4000));
+          } else {
+            fail(error instanceof Error ? error : new Error(String(error)));
+            this.close();
+          }
         });
+    };
+    this.signal.on("connect", () => {
+      this.signalGeneration++;
+      clearTimeout(this.reconnectTimer);
+      clearTimeout(this.registrationRetryTimer);
+      registrationRetries = 0;
+      this.secure.invalidatePeers();
+      register();
     });
     this.signal.on("connect_error", (error) => {
       this.log(`signaling error: ${error.message}`);
@@ -509,16 +562,21 @@ export class PeerClient {
         .catch((error: unknown) => this.log(`signal error: ${String(error)}`));
     });
     this.signal.on("disconnect", (reason) => {
+      this.signalGeneration++;
+      this.registration = undefined;
+      clearTimeout(this.registrationRetryTimer);
       this.groupMedia.offline();
       this.log(`signaling disconnected: ${reason}`);
       this.signalState = this.closed ? "offline" : "reconnecting";
       this.peers = [];
       this.emit({ kind: "presence", peers: [], profiles: [] });
       this.connection();
-      if (!this.closed && reason === "io server disconnect")
+      if (!this.closed && reason === "io server disconnect") {
+        clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => {
           if (!this.closed) this.signal?.connect();
         }, 1000);
+      }
     });
     this.signal.connect();
     try {
@@ -536,8 +594,7 @@ export class PeerClient {
     }, 10000);
     this.refreshTimer = setInterval(
       () => {
-        if (this.signal?.connected)
-          void this.register().catch((error) => this.log(String(error)));
+        if (this.signal?.connected) register();
       },
       6 * 60 * 60 * 1000,
     );
@@ -547,29 +604,43 @@ export class PeerClient {
       }, 15000);
   }
   private async register() {
-    this.registration ??= this.registerOnce().finally(() => {
-      this.registration = undefined;
+    const socket = this.signal,
+      generation = this.signalGeneration;
+    if (!socket) throw new SignalingTransportError("signaling unavailable");
+    this.assertSignalingSession(socket, generation);
+    if (this.registration?.generation === generation)
+      return this.registration.promise;
+    const promise = this.registerOnce(socket, generation).finally(() => {
+      if (this.registration?.promise === promise) this.registration = undefined;
     });
-    return this.registration;
+    this.registration = { generation, promise };
+    return promise;
   }
-  private async registerOnce() {
-    if (!this.signal || this.closed) return;
-    const response = await this.call(this.signal, "peer:register", {
+  private assertSignalingSession(socket: Socket, generation: number) {
+    if (
+      this.closed ||
+      !socket.connected ||
+      this.signal !== socket ||
+      generation !== this.signalGeneration
+    )
+      throw new SignalingTransportError("signaling session changed");
+  }
+  private async registerOnce(socket: Socket, generation: number) {
+    const response = await this.call(socket, "peer:register", {
       peerId: this.peerId,
       identityProof: this.config.identityProof,
       displayName: this.config.displayName || this.peerId,
       status: "online",
       connection: DEFAULT_PEER_CONNECTION,
     });
+    this.assertSignalingSession(socket, generation);
     if (!response.ok || !response.token)
       throw new Error(response.error || "registration failed");
-    if (this.closed) return;
     if (this.config.encryption) {
-      const published = await this.call(
-        this.signal,
-        "key:publish",
-        await this.secure.publicIdentity(),
-      );
+      const identity = await this.secure.publicIdentity();
+      this.assertSignalingSession(socket, generation);
+      const published = await this.call(socket, "key:publish", identity);
+      this.assertSignalingSession(socket, generation);
       if (!published.ok)
         throw Error(published.error || "cannot publish security key");
       this.log("E2EE enabled: ECDH P-256 / HKDF / AES-256-GCM");
@@ -615,6 +686,7 @@ export class PeerClient {
     return this.applyGroup(result.group);
   }
   async syncProjectGroup(projectId: string): Promise<Group> {
+    await this.waitForSignaling();
     if (!this.signal?.connected) throw new Error("signaling unavailable");
     const result = await this.call(this.signal, "project:group", { projectId });
     if (!result.ok || !result.group)
@@ -626,6 +698,7 @@ export class PeerClient {
     return group;
   }
   private async authorizeGroup(groupId: string, otherPeerId: string) {
+    await this.waitForSignaling();
     if (!this.signal?.connected)
       throw new Error("group authorization unavailable");
     const result = await this.call(this.signal, "group:authorize", {
@@ -1138,6 +1211,9 @@ export class PeerClient {
   }
   close() {
     this.closed = true;
+    this.signalGeneration++;
+    this.registration = undefined;
+    clearTimeout(this.registrationRetryTimer);
     clearInterval(this.advancedTimer);
     clearInterval(this.candidateTimer);
     this.media.close();

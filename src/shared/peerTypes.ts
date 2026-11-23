@@ -115,6 +115,8 @@ export type PeerConfig = {
   directBackgroundTimeoutMs?: number;
 
   requestTimeoutMs?: number;
+  /** Maximum wait for signaling registration and key publication (default 8 s). */
+  connectionWaitTimeoutMs?: number;
   ackTimeoutMs?: number;
   encryption?: boolean;
   identityStore?: import("./secure.ts").IdentityStore;
