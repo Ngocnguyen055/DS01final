@@ -95,7 +95,7 @@ async function main() {
   const rtcConfiguration = {
     iceServers:
       option("VITE_ICE_SERVERS") ||
-      '[{"urls":"stun:stun.cloudflare.com:3478"},{"urls":"stun:stun.l.google.com:19302"}]',
+      '[{"urls":"stun:stun.l.google.com:19302"}]',
     policy: option("VITE_ICE_POLICY") || "all",
   };
   const configurationFingerprint = createHash("sha256")

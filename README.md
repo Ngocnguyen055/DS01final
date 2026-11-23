@@ -169,7 +169,7 @@ PUBLIC_RELAY_URL=https://relay.example.org
 
 ## Giới hạn đã xác định
 
-- `.env.example` cấu hình STUN Cloudflare và Google; TURN tùy chọn qua `VITE_ICE_SERVERS`. Có mẫu coturn, chưa xác minh một TURN public. ICE relay candidate được ghi `TURN`, không gọi là DIRECT.
+- STUN mặc định là `stun:stun.l.google.com:19302`. Dùng `VITE_ICE_SERVERS` để chỉ định danh sách STUN/TURN khác. Có mẫu coturn, chưa xác minh một TURN public. Nếu cặp ICE được chọn dùng relay candidate, giao diện ghi `TURN`.
 - Relay Socket.IO là relay tầng ứng dụng, không phải TURN.
 - Mailbox lưu tối đa 500 envelope chưa xác nhận trên mỗi relay, TTL 24 giờ. File chunk không được giữ cho peer offline. Trạng thái `queued` chỉ xác nhận relay đã lưu bền vững, chưa phải người nhận đã nhận. Hết hạn mà chưa có ACK thì peer báo chưa xác nhận, ghi `DELIVERY_ERROR` và cho retry cùng ID; deadline được lưu qua reload. ACK hợp lệ đến muộn vẫn có thể xác nhận tin.
 - CLI signaling mặc định lưu trạng thái trong `../DS01-runtime/data/`. Launcher khóa kho trạng thái để tránh hai signaling writer, tự nhận biết khóa của PID đã dừng. Chưa có replication/failover signaling; Docker giữ dữ liệu trong volume riêng `/app/.data`.

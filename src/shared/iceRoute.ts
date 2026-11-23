@@ -4,7 +4,6 @@ export type IceRoute = {
   remoteType: string;
 };
 export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
-  { urls: "stun:stun.cloudflare.com:3478" },
   { urls: "stun:stun.l.google.com:19302" },
 ];
 
