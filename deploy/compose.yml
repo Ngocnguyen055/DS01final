@@ -1,43 +1,83 @@
+name: ds01
 services:
   signaling:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      target: app
+    build: { context: .., dockerfile: deploy/Dockerfile, target: app }
     environment:
       NODE_ENV: production
+      NODE_ID: signaling
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       PEER_SECRET: ${PEER_SECRET:?Set PEER_SECRET}
       SIGNAL_STATE_PATH: /app/.data/signaling.json
-    ports: ['4001:4001']
+    ports: ["127.0.0.1:4001:4001"]
     volumes: [signal-state:/app/.data]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
   relay:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      target: app
-    command: ['npm', 'run', 'start:relay']
+    build: { context: .., dockerfile: deploy/Dockerfile, target: app }
+    command: ["npm", "run", "start:relay"]
     environment:
       NODE_ENV: production
+      NODE_ID: relay-primary
       PEER_SECRET: ${PEER_SECRET:?Set PEER_SECRET}
       SIGNAL_INTERNAL_URL: http://signaling:4001
-    ports: ['4002:4002']
-    depends_on: [signaling]
+      RELAY_OFFLINE_QUEUE: "1"
+      RELAY_STATE_PATH: /app/.data/relay.json
+      RELAY_PUBLIC_URL: ${PUBLIC_RELAY_URL:-http://localhost:4002}
+      RELAY_CLUSTER_URLS: ${PUBLIC_RELAY_URL:-http://localhost:4002},${PUBLIC_RELAY_BACKUP_URL:-http://localhost:4003}
+      RELAY_CLUSTER_ROUTES: '{"${PUBLIC_RELAY_URL:-http://localhost:4002}":"http://relay:4002","${PUBLIC_RELAY_BACKUP_URL:-http://localhost:4003}":"http://relay-backup:4003"}'
+      SUPER_PEER_ID: ${SUPER_PEER_ID:-}
+    ports: ["127.0.0.1:4002:4002"]
+    volumes: [relay-state:/app/.data]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
   relay-backup:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile
-      target: app
-    command: ['npm', 'run', 'start:relay']
+    build: { context: .., dockerfile: deploy/Dockerfile, target: app }
+    command: ["npm", "run", "start:relay"]
     environment:
       NODE_ENV: production
+      NODE_ID: relay-backup
       PEER_SECRET: ${PEER_SECRET:?Set PEER_SECRET}
       SIGNAL_INTERNAL_URL: http://signaling:4001
-      RELAY_PORT: 4003
-    ports: ['4003:4003']
-    depends_on: [signaling]
+      RELAY_PORT: "4003"
+      RELAY_OFFLINE_QUEUE: "1"
+      RELAY_STATE_PATH: /app/.data/relay.json
+      RELAY_PUBLIC_URL: ${PUBLIC_RELAY_BACKUP_URL:-http://localhost:4003}
+      RELAY_CLUSTER_URLS: ${PUBLIC_RELAY_URL:-http://localhost:4002},${PUBLIC_RELAY_BACKUP_URL:-http://localhost:4003}
+      RELAY_CLUSTER_ROUTES: '{"${PUBLIC_RELAY_URL:-http://localhost:4002}":"http://relay:4002","${PUBLIC_RELAY_BACKUP_URL:-http://localhost:4003}":"http://relay-backup:4003"}'
+      SUPER_PEER_ID: ${SUPER_PEER_BACKUP_ID:-}
+    ports: ["127.0.0.1:4003:4003"]
+    volumes: [relay-backup-state:/app/.data]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4003/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
   web:
     build:
@@ -49,7 +89,16 @@ services:
         VITE_RELAY_URL: ${VITE_RELAY_URL:-http://localhost:4002}
         VITE_RELAY_URLS: ${VITE_RELAY_URLS:-http://localhost:4003}
         VITE_ICE_SERVERS: ${VITE_ICE_SERVERS:-}
-    ports: ['8080:80']
+        VITE_E2EE: "1"
+        VITE_RELAY_SELECTION: latency-load
+    ports: ["127.0.0.1:8080:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 volumes:
   signal-state:
+  relay-state:
+  relay-backup-state:

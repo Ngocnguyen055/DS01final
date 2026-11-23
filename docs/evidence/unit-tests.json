@@ -1,1 +1,337 @@
-{"numTotalTestSuites":13,"numPassedTestSuites":13,"numFailedTestSuites":0,"numPendingTestSuites":0,"numTotalTests":28,"numPassedTests":28,"numFailedTests":0,"numPendingTests":0,"numTodoTests":0,"snapshot":{"added":0,"failure":false,"filesAdded":0,"filesRemoved":0,"filesRemovedList":[],"filesUnmatched":0,"filesUpdated":0,"matched":0,"total":0,"unchecked":0,"uncheckedKeysByFile":[],"unmatched":0,"updated":0,"didUpdate":false},"startTime":1793718728233,"success":true,"testResults":[{"assertionResults":[{"ancestorTitles":["account authentication"],"fullName":"account authentication persists salted password hashes and session hashes, restores identity and revokes old sessions","status":"passed","title":"persists salted password hashes and session hashes, restores identity and revokes old sessions","duration":1462.4314,"failureMessages":[],"meta":{}},{"ancestorTitles":["account authentication"],"fullName":"account authentication accepts exactly one simultaneous registration for a normalized username","status":"passed","title":"accepts exactly one simultaneous registration for a normalized username","duration":638.7960999999996,"failureMessages":[],"meta":{}},{"ancestorTitles":["account authentication"],"fullName":"account authentication rejects invalid data, wrong credentials and login while the account peer is online","status":"passed","title":"rejects invalid data, wrong credentials and login while the account peer is online","duration":1744.1358999999993,"failureMessages":[],"meta":{}},{"ancestorTitles":["account authentication"],"fullName":"account authentication expires sessions and fails startup on corrupted durable account state","status":"passed","title":"expires sessions and fails startup on corrupted durable account state","duration":1036.0789000000004,"failureMessages":[],"meta":{}},{"ancestorTitles":["account authentication"],"fullName":"account authentication limits attempts across independent requests rather than resetting the budget on reconnect","status":"passed","title":"limits attempts across independent requests rather than resetting the budget on reconnect","duration":537.1665000000003,"failureMessages":[],"meta":{}},{"ancestorTitles":["account authentication"],"fullName":"account authentication binds signaling and relay identities to an account session, and revokes existing relay access on logout","status":"passed","title":"binds signaling and relay identities to an account session, and revokes existing relay access on logout","duration":1971.6524,"failureMessages":[],"meta":{}}],"startTime":1793718730280,"endTime":1793718737670.6523,"status":"passed","message":"","name":"F:/Downloads/DS01/tests/accounts.test.ts"},{"assertionResults":[{"ancestorTitles":["peer delivery across real Socket.IO processes"],"fullName":"peer delivery across real Socket.IO processes keeps personal histories separate from group fan-out, restores them, and reports an offline recipient","status":"passed","title":"keeps personal histories separate from group fan-out, restores them, and reports an offline recipient","duration":441.8888000000002,"failureMessages":[],"meta":{}},{"ancestorTitles":["peer delivery across real Socket.IO processes"],"fullName":"peer delivery across real Socket.IO processes times out a simulated dead DataChannel, falls back to RELAY, gets receiver ACK, and deduplicates","status":"passed","title":"times out a simulated dead DataChannel, falls back to RELAY, gets receiver ACK, and deduplicates","duration":504.67610000000013,"failureMessages":[],"meta":{}},{"ancestorTitles":["peer delivery across real Socket.IO processes"],"fullName":"peer delivery across real Socket.IO processes tracks group ACK separately for two recipients","status":"passed","title":"tracks group ACK separately for two recipients","duration":266.1993000000002,"failureMessages":[],"meta":{}}],"startTime":1793718730510,"endTime":1793718731723.1992,"status":"passed","message":"","name":"F:/Downloads/DS01/tests/peer.test.ts"},{"assertionResults":[{"ancestorTitles":["persistent project chat authorization"],"fullName":"persistent project chat authorization discovers automatic groups, preserves old history after removal, and blocks new relay/direct input and archived writes","status":"passed","title":"discovers automatic groups, preserves old history after removal, and blocks new relay/direct input and archived writes","duration":416.3327999999999,"failureMessages":[],"meta":{}},{"ancestorTitles":["persistent project chat authorization"],"fullName":"persistent project chat authorization fails closed when project authorization is unavailable","status":"passed","title":"fails closed when project authorization is unavailable","duration":15.937199999999848,"failureMessages":[],"meta":{}}],"startTime":1793718730255,"endTime":1793718730687.9373,"status":"passed","message":"","name":"F:/Downloads/DS01/tests/project-chat.test.ts"},{"assertionResults":[{"ancestorTitles":["protocol validation"],"fullName":"protocol validation accepts a bounded message and rejects spoofable/malformed fields","status":"passed","title":"accepts a bounded message and rejects spoofable/malformed fields","duration":11.004400000000032,"failureMessages":[],"meta":{}},{"ancestorTitles":["protocol validation"],"fullName":"protocol validation accepts omitted/null group IDs for personal messages and preserves valid group IDs","status":"passed","title":"accepts omitted/null group IDs for personal messages and preserves valid group IDs","duration":1.9694999999999254,"failureMessages":[],"meta":{}},{"ancestorTitles":["protocol validation"],"fullName":"protocol validation accepts bounded direct attachment metadata and rejects unsafe attachment packets","status":"passed","title":"accepts bounded direct attachment metadata and rejects unsafe attachment packets","duration":5.315200000000004,"failureMessages":[],"meta":{}}],"startTime":1793718729472,"endTime":1793718729490.3152,"status":"passed","message":"","name":"F:/Downloads/DS01/tests/protocol.test.ts"},{"assertionResults":[{"ancestorTitles":["recovery and adversarial inputs"],"fullName":"recovery and adversarial inputs does not consume the receiver ACK budget while the transport is still authorizing or forwarding","status":"passed","title":"does not consume the receiver ACK budget while the transport is still authorizing or forwarding","duration":65.89379999999983,"failureMessages":[],"meta":{}},{"ancestorTitles":["recovery and adversarial inputs"],"fullName":"recovery and adversarial inputs keeps demo identity and groups across restart and refuses a damaged registry","status":"passed","title":"keeps demo identity and groups across restart and refuses a damaged registry","duration":184.16719999999987,"failureMessages":[],"meta":{}},{"ancestorTitles":["recovery and adversarial inputs"],"fullName":"recovery and adversarial inputs survives malformed callbacks on anonymous signaling and authenticated relay sockets","status":"passed","title":"survives malformed callbacks on anonymous signaling and authenticated relay sockets","duration":137.64300000000003,"failureMessages":[],"meta":{}},{"ancestorTitles":["recovery and adversarial inputs"],"fullName":"recovery and adversarial inputs publishes display names and transfers ownership when the owner leaves","status":"passed","title":"publishes display names and transfers ownership when the owner leaves","duration":47.497299999999996,"failureMessages":[],"meta":{}},{"ancestorTitles":["recovery and adversarial inputs"],"fullName":"recovery and adversarial inputs orders equal-clock and out-of-order messages by sender sequence without a cyclic comparator","status":"passed","title":"orders equal-clock and out-of-order messages by sender sequence without a cyclic comparator","duration":2.1230000000000473,"failureMessages":[],"meta":{}},{"ancestorTitles":["recovery and adversarial inputs"],"fullName":"recovery and adversarial inputs settles an in-flight send on close and recovers sequence plus interrupted history after restart","status":"passed","title":"settles an in-flight send on close and recovers sequence plus interrupted history after restart","duration":1.656500000000051,"failureMessages":[],"meta":{}},{"ancestorTitles":["advanced delivery"],"fullName":"advanced delivery labels an ICE relay candidate as TURN instead of claiming a direct path","status":"passed","title":"labels an ICE relay candidate as TURN instead of claiming a direct path","duration":140.07919999999967,"failureMessages":[],"meta":{}},{"ancestorTitles":["advanced delivery"],"fullName":"advanced delivery fails over to an independent second relay and reassembles a 512 KiB file with an application ACK per chunk","status":"passed","title":"fails over to an independent second relay and reassembles a 512 KiB file with an application ACK per chunk","duration":3431.2659,"failureMessages":[],"meta":{}},{"ancestorTitles":["advanced delivery"],"fullName":"advanced delivery rejects corrupt file bytes before storage and never marks integrity failures complete","status":"passed","title":"rejects corrupt file bytes before storage and never marks integrity failures complete","duration":2.4517000000005282,"failureMessages":[],"meta":{}}],"startTime":1793718730303,"endTime":1793718734316.4517,"status":"passed","message":"","name":"F:/Downloads/DS01/tests/recovery-advanced.test.ts"},{"assertionResults":[{"ancestorTitles":["signaling and relay integration"],"fullName":"signaling and relay integration looks up fresh peers, refreshes heartbeat, and reports disconnects without leaking connection internals","status":"passed","title":"looks up fresh peers, refreshes heartbeat, and reports disconnects without leaking connection internals","duration":188.39800000000014,"failureMessages":[],"meta":{}},{"ancestorTitles":["signaling and relay integration"],"fullName":"signaling and relay integration requires current registration, validates lookup input strictly, and hides stale timestamps","status":"passed","title":"requires current registration, validates lookup input strictly, and hides stale timestamps","duration":83.45580000000018,"failureMessages":[],"meta":{}},{"ancestorTitles":["signaling and relay integration"],"fullName":"signaling and relay integration denies discovery and relay delivery when either account blocks direct chat","status":"passed","title":"denies discovery and relay delivery when either account blocks direct chat","duration":68.11189999999988,"failureMessages":[],"meta":{}},{"ancestorTitles":["signaling and relay integration"],"fullName":"signaling and relay integration discovers three peers, rejects duplicate identity, and resolves concurrent group edits by version","status":"passed","title":"discovers three peers, rejects duplicate identity, and resolves concurrent group edits by version","duration":33.740999999999985,"failureMessages":[],"meta":{}},{"ancestorTitles":["signaling and relay integration"],"fullName":"signaling and relay integration forwards only to target, rejects sender spoof/oversize/group outsider, and detects disconnect","status":"passed","title":"forwards only to target, rejects sender spoof/oversize/group outsider, and detects disconnect","duration":120.54239999999982,"failureMessages":[],"meta":{}}],"startTime":1793718730255,"endTime":1793718730749.5425,"status":"passed","message":"","name":"F:/Downloads/DS01/tests/services.test.ts"}]}
+{
+  "numTotalTestSuites": 13,
+  "numPassedTestSuites": 13,
+  "numFailedTestSuites": 0,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 28,
+  "numPassedTests": 28,
+  "numFailedTests": 0,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1793718728233,
+  "success": true,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["account authentication"],
+          "fullName": "account authentication persists salted password hashes and session hashes, restores identity and revokes old sessions",
+          "status": "passed",
+          "title": "persists salted password hashes and session hashes, restores identity and revokes old sessions",
+          "duration": 1462.4314,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["account authentication"],
+          "fullName": "account authentication accepts exactly one simultaneous registration for a normalized username",
+          "status": "passed",
+          "title": "accepts exactly one simultaneous registration for a normalized username",
+          "duration": 638.7960999999996,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["account authentication"],
+          "fullName": "account authentication rejects invalid data, wrong credentials and login while the account peer is online",
+          "status": "passed",
+          "title": "rejects invalid data, wrong credentials and login while the account peer is online",
+          "duration": 1744.1358999999993,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["account authentication"],
+          "fullName": "account authentication expires sessions and fails startup on corrupted durable account state",
+          "status": "passed",
+          "title": "expires sessions and fails startup on corrupted durable account state",
+          "duration": 1036.0789000000004,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["account authentication"],
+          "fullName": "account authentication limits attempts across independent requests rather than resetting the budget on reconnect",
+          "status": "passed",
+          "title": "limits attempts across independent requests rather than resetting the budget on reconnect",
+          "duration": 537.1665000000003,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["account authentication"],
+          "fullName": "account authentication binds signaling and relay identities to an account session, and revokes existing relay access on logout",
+          "status": "passed",
+          "title": "binds signaling and relay identities to an account session, and revokes existing relay access on logout",
+          "duration": 1971.6524,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793718730280,
+      "endTime": 1793718737670.6523,
+      "status": "passed",
+      "message": "",
+      "name": "F:/Downloads/DS01/tests/accounts.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["peer delivery across real Socket.IO processes"],
+          "fullName": "peer delivery across real Socket.IO processes keeps personal histories separate from group fan-out, restores them, and reports an offline recipient",
+          "status": "passed",
+          "title": "keeps personal histories separate from group fan-out, restores them, and reports an offline recipient",
+          "duration": 441.8888000000002,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["peer delivery across real Socket.IO processes"],
+          "fullName": "peer delivery across real Socket.IO processes times out a simulated dead DataChannel, falls back to RELAY, gets receiver ACK, and deduplicates",
+          "status": "passed",
+          "title": "times out a simulated dead DataChannel, falls back to RELAY, gets receiver ACK, and deduplicates",
+          "duration": 504.67610000000013,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["peer delivery across real Socket.IO processes"],
+          "fullName": "peer delivery across real Socket.IO processes tracks group ACK separately for two recipients",
+          "status": "passed",
+          "title": "tracks group ACK separately for two recipients",
+          "duration": 266.1993000000002,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793718730510,
+      "endTime": 1793718731723.1992,
+      "status": "passed",
+      "message": "",
+      "name": "F:/Downloads/DS01/tests/peer.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["persistent project chat authorization"],
+          "fullName": "persistent project chat authorization discovers automatic groups, preserves old history after removal, and blocks new relay/direct input and archived writes",
+          "status": "passed",
+          "title": "discovers automatic groups, preserves old history after removal, and blocks new relay/direct input and archived writes",
+          "duration": 416.3327999999999,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["persistent project chat authorization"],
+          "fullName": "persistent project chat authorization fails closed when project authorization is unavailable",
+          "status": "passed",
+          "title": "fails closed when project authorization is unavailable",
+          "duration": 15.937199999999848,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793718730255,
+      "endTime": 1793718730687.9373,
+      "status": "passed",
+      "message": "",
+      "name": "F:/Downloads/DS01/tests/project-chat.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["protocol validation"],
+          "fullName": "protocol validation accepts a bounded message and rejects spoofable/malformed fields",
+          "status": "passed",
+          "title": "accepts a bounded message and rejects spoofable/malformed fields",
+          "duration": 11.004400000000032,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["protocol validation"],
+          "fullName": "protocol validation accepts omitted/null group IDs for personal messages and preserves valid group IDs",
+          "status": "passed",
+          "title": "accepts omitted/null group IDs for personal messages and preserves valid group IDs",
+          "duration": 1.9694999999999254,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["protocol validation"],
+          "fullName": "protocol validation accepts bounded direct attachment metadata and rejects unsafe attachment packets",
+          "status": "passed",
+          "title": "accepts bounded direct attachment metadata and rejects unsafe attachment packets",
+          "duration": 5.315200000000004,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793718729472,
+      "endTime": 1793718729490.3152,
+      "status": "passed",
+      "message": "",
+      "name": "F:/Downloads/DS01/tests/protocol.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["recovery and adversarial inputs"],
+          "fullName": "recovery and adversarial inputs does not consume the receiver ACK budget while the transport is still authorizing or forwarding",
+          "status": "passed",
+          "title": "does not consume the receiver ACK budget while the transport is still authorizing or forwarding",
+          "duration": 65.89379999999983,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["recovery and adversarial inputs"],
+          "fullName": "recovery and adversarial inputs keeps demo identity and groups across restart and refuses a damaged registry",
+          "status": "passed",
+          "title": "keeps demo identity and groups across restart and refuses a damaged registry",
+          "duration": 184.16719999999987,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["recovery and adversarial inputs"],
+          "fullName": "recovery and adversarial inputs survives malformed callbacks on anonymous signaling and authenticated relay sockets",
+          "status": "passed",
+          "title": "survives malformed callbacks on anonymous signaling and authenticated relay sockets",
+          "duration": 137.64300000000003,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["recovery and adversarial inputs"],
+          "fullName": "recovery and adversarial inputs publishes display names and transfers ownership when the owner leaves",
+          "status": "passed",
+          "title": "publishes display names and transfers ownership when the owner leaves",
+          "duration": 47.497299999999996,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["recovery and adversarial inputs"],
+          "fullName": "recovery and adversarial inputs orders equal-clock and out-of-order messages by sender sequence without a cyclic comparator",
+          "status": "passed",
+          "title": "orders equal-clock and out-of-order messages by sender sequence without a cyclic comparator",
+          "duration": 2.1230000000000473,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["recovery and adversarial inputs"],
+          "fullName": "recovery and adversarial inputs settles an in-flight send on close and recovers sequence plus interrupted history after restart",
+          "status": "passed",
+          "title": "settles an in-flight send on close and recovers sequence plus interrupted history after restart",
+          "duration": 1.656500000000051,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["advanced delivery"],
+          "fullName": "advanced delivery labels an ICE relay candidate as TURN instead of claiming a direct path",
+          "status": "passed",
+          "title": "labels an ICE relay candidate as TURN instead of claiming a direct path",
+          "duration": 140.07919999999967,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["advanced delivery"],
+          "fullName": "advanced delivery fails over to an independent second relay and reassembles a 512 KiB file with an application ACK per chunk",
+          "status": "passed",
+          "title": "fails over to an independent second relay and reassembles a 512 KiB file with an application ACK per chunk",
+          "duration": 3431.2659,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["advanced delivery"],
+          "fullName": "advanced delivery rejects corrupt file bytes before storage and never marks integrity failures complete",
+          "status": "passed",
+          "title": "rejects corrupt file bytes before storage and never marks integrity failures complete",
+          "duration": 2.4517000000005282,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793718730303,
+      "endTime": 1793718734316.4517,
+      "status": "passed",
+      "message": "",
+      "name": "F:/Downloads/DS01/tests/recovery-advanced.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["signaling and relay integration"],
+          "fullName": "signaling and relay integration looks up fresh peers, refreshes heartbeat, and reports disconnects without leaking connection internals",
+          "status": "passed",
+          "title": "looks up fresh peers, refreshes heartbeat, and reports disconnects without leaking connection internals",
+          "duration": 188.39800000000014,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["signaling and relay integration"],
+          "fullName": "signaling and relay integration requires current registration, validates lookup input strictly, and hides stale timestamps",
+          "status": "passed",
+          "title": "requires current registration, validates lookup input strictly, and hides stale timestamps",
+          "duration": 83.45580000000018,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["signaling and relay integration"],
+          "fullName": "signaling and relay integration denies discovery and relay delivery when either account blocks direct chat",
+          "status": "passed",
+          "title": "denies discovery and relay delivery when either account blocks direct chat",
+          "duration": 68.11189999999988,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["signaling and relay integration"],
+          "fullName": "signaling and relay integration discovers three peers, rejects duplicate identity, and resolves concurrent group edits by version",
+          "status": "passed",
+          "title": "discovers three peers, rejects duplicate identity, and resolves concurrent group edits by version",
+          "duration": 33.740999999999985,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["signaling and relay integration"],
+          "fullName": "signaling and relay integration forwards only to target, rejects sender spoof/oversize/group outsider, and detects disconnect",
+          "status": "passed",
+          "title": "forwards only to target, rejects sender spoof/oversize/group outsider, and detects disconnect",
+          "duration": 120.54239999999982,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793718730255,
+      "endTime": 1793718730749.5425,
+      "status": "passed",
+      "message": "",
+      "name": "F:/Downloads/DS01/tests/services.test.ts"
+    }
+  ]
+}

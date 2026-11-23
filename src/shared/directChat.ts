@@ -10,7 +10,6 @@ import {
   type StoredMessage,
 } from "./peer.ts";
 
-/** UI-independent 1:1 operations on an already connected PeerClient. */
 export class DirectChatService {
   constructor(
     private peer: PeerClient,

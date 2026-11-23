@@ -1,175 +1,369 @@
-# MẠCH — HỆ THỐNG CHAT P2P DS01
+# DS01 P2P Chat
 
-**Bản dự thảo kỹ thuật sau cải thiện — chưa phải bản nộp cuối.**
+**BÁO CÁO BÀI TẬP LỚN — HỌC PHẦN HỆ THỐNG PHÂN TÁN**
 
-Học phần: Hệ thống phân tán. Đề tài: DS01 — P2P chat mô phỏng Skype. Ngày chuẩn bị: 29/10/2026.
+Đề tài DS01: Xây dựng hệ thống chat P2P mô phỏng Skype.
 
-Thông tin lớp, giảng viên, tên/MSSV và phân công thành viên: **chưa được cung cấp**. Nhóm cần điền đúng đóng góp thật, bổ sung kết quả Internet/NAT và chốt bản báo cáo cuối. Không suy ra đóng góp cá nhân từ mã hoặc tự tạo lịch sử Git thay sinh viên.
+Phiên bản tài liệu dùng chung ngày 20/11/2026.
 
-## Tóm tắt
+| Thông tin                | Nội dung                                                             |
+| ------------------------ | -------------------------------------------------------------------- |
+| Cơ sở đào tạo, khoa, lớp | Nhóm điền trước khi nộp                                              |
+| Giảng viên hướng dẫn     | Nhóm điền trước khi nộp                                              |
+| Mã nhóm                  | Nhóm điền trước khi nộp                                              |
+| Thành viên               | Nam, Hồng, Ngọc — bổ sung họ tên đầy đủ và MSSV                      |
+| Repository               | https://github.com/Ngocnguyen055/DS01                                |
+| Commit B2/B4 tham chiếu  | 8677e28 — Implement B2 WebRTC connectivity and B4 reliable messaging |
 
-Mạch là prototype chat phân tán gồm web peer, bootstrap/signaling và application relay độc lập. Peer ưu tiên WebRTC DataChannel, sử dụng Socket.IO relay khi đường trực tiếp không lập được hoặc không nhận ACK. Nhóm dùng multi-unicast và ACK riêng từng receiver. Client lưu lịch sử tại thiết bị; signaling lưu bền ràng buộc Peer ID và nhóm bằng atomic snapshot.
+## 1. Thông tin nhóm và phân công
 
-Các cơ chế nhóm tự xây dựng gồm message identity/session/sequence, logical time, ACK ứng dụng, retry giới hạn, dedup có ledger, kiểm soát version membership, chính sách chuyển owner, phục hồi interrupted sends, relay pool failover và chuyển file theo chunk có SHA-256. Giao diện cung cấp chat cá nhân/nhóm, trạng thái đường truyền, tiến trình file và chẩn đoán.
+Báo cáo là sản phẩm chung của ba thành viên. Bảng dưới xác định trách nhiệm theo bảng phân công của nhóm; lịch sử commit và bằng chứng thực hiện được dùng để đối chiếu đóng góp.
 
-Kiểm thử tách ba mức: unit/integration qua sockets thật; browser headless dùng WebRTC và IndexedDB thật trên localhost; nghiệm thu WAN/NAT ngoài môi trường local. Chỉ hai mức đầu đã có bằng chứng ở working tree này. Không khẳng định E2EE, offline store-and-forward hoặc signaling replication.
+| Thành viên | Nhiệm vụ         | Nội dung chính                                                                         |
+| ---------- | ---------------- | -------------------------------------------------------------------------------------- |
+| Hồng       | B1, B3, N8       | Signaling, discovery, xác thực; relay ứng dụng; thử tải và phân tích số liệu           |
+| Nam        | B2, B4, D1       | WebRTC, STUN/TURN và chuyển đường; giao thức, ACK/retry/dedup/ordering; cấu hình CI/CD |
+| Ngọc       | B5, B6           | Chat nhóm, nhất quán thành viên; web peer và lịch sử cục bộ                            |
+| Cả nhóm    | Nghiệm thu chung | Tích hợp, ba peer, đồng thời, lỗi/phục hồi, báo cáo và thuyết trình                    |
 
-## 1. Bài toán, yêu cầu và phạm vi
+Các đầu việc nâng cao có phần giao nhau giữa các thành phần. Nhóm chốt người thực hiện theo công việc thực tế; không coi toàn bộ một thư mục là đóng góp riêng của người đầu tiên push thư mục đó.
 
-DS01 yêu cầu nhiều peer gửi/nhận đồng thời, có danh tính, discovery, trực tiếp hoặc relay, lịch sử cục bộ và khả năng hoạt động khi peer bị NAT/firewall hạn chế. Signaling được phép hỗ trợ thiết lập kết nối nhưng không âm thầm đóng vai trò centralized chat server.
+## 2. Tóm tắt
 
-Các yêu cầu chung gồm ít nhất ba thành phần độc lập giao tiếp mạng, concurrency/consistency, ít nhất hai tình huống lỗi–phục hồi, xác thực/phân quyền/validation, log và đánh giá hiệu năng. Mục 9 yêu cầu tối thiểu 8 functional, 2 concurrency/conflict, 2 fault/recovery, 2 security/invalid-data và 1 performance experiment. Mười hai demo của 5.10 được ánh xạ trong MANUAL-ACCEPTANCE.md.
+DS01 P2P Chat là nguyên mẫu chat phân tán gồm web peer, bootstrap/signaling và application relay độc lập. Mỗi peer vừa khởi tạo vừa tiếp nhận kết nối. Signaling hỗ trợ định danh, discovery và SDP/ICE; chat body đi qua WebRTC DataChannel hoặc application relay riêng.
 
-Phạm vi sản phẩm: prototype web với text/group/file cá nhân. Có đăng ký/đăng nhập tài khoản local, mật khẩu scrypt và tự kết nối peer. Peer ID tài khoản là user_ + username. Chế độ demo cũ vẫn dùng secret ngẫu nhiên cấp tại browser. Chưa có reset mật khẩu/email/MFA hoặc quản lý nhiều thiết bị. Adapter tài khoản/project từ hệ thống khác là extension point, không được trình bày như một Mobile API đã tự chứa trong repo.
+Hệ thống ưu tiên WebRTC khi kết nối phù hợp. Nếu không thiết lập được, kết nối lỗi hoặc thiếu ACK ứng dụng, peer sử dụng relay qua kết nối Socket.IO outbound. Giao diện hiển thị DIRECT, TURN hoặc RELAY và mức xác nhận của tin.
 
-## 2. Phân tích vấn đề hệ thống phân tán
+Các cơ chế chính gồm Message ID/Session ID, sequence, logical time, ACK sau lưu trữ, retry hữu hạn, dedup, membership version và khôi phục sau restart. Phần mở rộng có nhiều relay, chọn relay, mailbox offline, replication, E2EE, DHT, truyền file và thoại/video ở mức nguyên mẫu.
 
-| Vấn đề | Giải pháp trong prototype | Giới hạn |
-|---|---|---|
-| Naming và discovery | Peer ID, registry, lookup và presence/profiles | Một signaling |
-| Private IP/NAT | ICE/STUN, TURN tùy chọn, outbound application relay | WAN phụ thuộc mạng và triển khai thật |
-| Mất ACK hoặc gói trùng | UUID, ACK ứng dụng, 3 attempt, dedup | Retry hữu hạn, không unconditional at-least-once |
-| Thứ tự khác nhau | Sender/session sequence, logical time, merge | Không total order toàn hệ thống |
-| Sửa membership đồng thời | Version và optimistic concurrency | Các thay đổi được tuần tự tại một signaling |
-| Peer/server rời mạng | Heartbeat/lease, transport disconnect, reconnect/failover | Không failover signaling |
-| State sau restart | Local history, interrupted sends, atomic server snapshot | Không replication hoặc distributed transaction |
-| File không toàn vẹn | Chunk bounds, metadata consistency, SHA-256 | Chưa resume transfer dở qua restart |
+Báo cáo mô tả bản phát triển tích hợp tại thư mục dự án và đối chiếu riêng B2/B4 trong commit 8677e28. Kết quả được ghi theo phiên bản nguồn và môi trường chạy. Khi chốt phiên bản nhóm, mã nguồn, dependency, cấu hình và tài liệu cần được hợp nhất cùng nhau.
 
-## 3. Kiến trúc triển khai
+## 3. Bài toán và yêu cầu
 
-Signaling, mỗi relay và web server có process/lifecycle/port riêng. Peer chỉ dùng mạng để trao đổi control/data; localStorage/IndexedDB là persistence cục bộ, không dùng làm bus giữa các peer. State file signaling là dữ liệu nội bộ một writer, không phải shared-file communication giữa các server.
+Hai thiết bị có thể nằm sau NAT, có IP riêng hoặc bị firewall giới hạn kết nối vào. Peer không thể chỉ lấy IP riêng của peer khác rồi mặc định mở kết nối thành công. Ngoài chọn đường truyền, ứng dụng cần phân biệt kết nối đã mở, gói đã chuyển và dữ liệu đã lưu ở người nhận.
 
-| Thành phần | Trách nhiệm |
-|---|---|
-| src/signaling | Đăng ký, profiles, heartbeat/lease, lookup, SDP/ICE, membership và quyền nhóm |
-| src/relay | JWT auth, Peer ID → socket, validate envelope, forwarding và disconnect |
-| src/shared | Protocol, PeerClient, DirectTransport, MessageDelivery, FileTransfer, ordering |
-| src/web-peer | Giao diện React, localStorage history/contact/dedup, IndexedDB file |
-| src/server-kit | Atomic state và guard/log dùng phía server |
-| deploy | Caddy, Docker Compose và coturn sample |
+| Mục trong đề | Nội dung triển khai                                               |
+| ------------ | ----------------------------------------------------------------- |
+| 4.1–4.2      | Process độc lập, danh tính node, giao tiếp mạng, log và giao thức |
+| 4.3          | Tình huống đồng thời, OCC, version và mô hình nhất quán           |
+| 4.4          | Timeout, bounded retry, ACK, lease, reconnect và failover         |
+| 4.5          | Xác thực, phân quyền, validation, giới hạn dữ liệu, secret        |
+| 5.1–5.5      | Discovery, WebRTC, NAT traversal, relay và chat hai chiều         |
+| 5.6–5.9      | Nhóm, envelope, reliable delivery và relay routing                |
+| 5.10         | Ba peer, log chứng minh tuyến, đồng thời và phục hồi              |
+| 5.11         | Các chức năng mở rộng, được giải thích riêng                      |
+| 9–11         | Test, hiệu năng, repository, báo cáo và trình diễn                |
 
-Hai đường data chính là DataChannel giữa peer và relay Socket.IO. Chat body không đi qua các event signaling; signaling chỉ chuyển SDP/ICE và ID dùng kiểm tra quyền. Với nhóm, control-plane authorization vẫn phụ thuộc signaling khi gửi/nhận dù payload đi DIRECT.
+Nguồn yêu cầu là COURSE PROJECT SPECIFICATION.pdf, trang 2–9 và 14–17. Các yêu cầu riêng DS02/DS03/DS04 không được tính thành yêu cầu bắt buộc của DS01.
 
-## 4. Định danh, xác thực và discovery
+## 4. Những vấn đề hệ thống phân tán
 
-Luồng mặc định gồm tạo tài khoản, đăng nhập và tự đăng ký peer. Username chuẩn hóa chữ thường; Peer ID cố định user_ + username. Mật khẩu dùng scrypt N=131072/r=8/p=1 với salt riêng; phiên ngẫu nhiên 32 byte lưu hash tại server, token tại sessionStorage, hết hạn sau 12 giờ. Đăng xuất thu hồi phiên; relay kiểm tra phiên qua HTTP nội bộ khi handshake và forwarding. Một tài khoản chỉ có một peer online. Chi tiết trong docs/authentication.md.
+| Vấn đề       | Rủi ro                         | Cơ chế                                  |
+| ------------ | ------------------------------ | --------------------------------------- |
+| Định danh    | Hai phiên dùng cùng Peer ID    | Ràng buộc danh tính và phiên            |
+| Discovery    | Trạng thái online cũ           | Heartbeat, lease, loại phiên hết hạn    |
+| NAT/firewall | Không nhận kết nối vào         | ICE/STUN, TURN, application relay       |
+| Giao tin     | Mất ACK, trùng bản nhận        | ID bất biến, ACK và dedup               |
+| Ordering     | Đến muộn, đồng hồ vật lý lùi   | Sender/session sequence và logical time |
+| Membership   | Hai sửa đổi ghi đè nhau        | Version và optimistic concurrency       |
+| Khả dụng     | Relay dừng hoặc không phản hồi | Timeout, reconnect, relay dự phòng      |
+| Persistence  | Process dừng khi ghi state     | Atomic snapshot và kiểm tra schema      |
+| Replication  | Write/delete đến khác thứ tự   | Clock, origin, merge và tombstone       |
 
-Peer ID gồm 3–32 chữ/số/underscore/hyphen. Trong chế độ demo kỹ thuật, Web tạo secret ngẫu nhiên lưu theo ID trong browser; signaling chỉ giữ SHA-256 hash ràng buộc ID với secret. Đây là cơ chế đăng ký đầu tiên giữ quyền sở hữu ID, không phải xác thực danh tính ngoài đời. Sau restart, registry vẫn giữ hash nên secret khác không chiếm lại ID cũ.
+Các Map/biến trong process chỉ quản lý state nội bộ. Peer trao đổi qua mạng; không dùng shared file hoặc shared memory thay cho giao thức. Các relay có kho riêng và trao đổi replica bằng HTTP.
 
-Registration kiểm tra ID, identity proof, tên hiển thị và trùng phiên online. Relay token được signaling ký bằng PEER_SECRET, khác vai trò JWT_SECRET dùng adapter account. Relay xác minh token và đối chiếu sender của envelope với subject; client không tự chọn sender khác.
+## 5. Phân tích và lựa chọn giải pháp
 
-Peer đã đăng ký nhận presence và profiles. Lookup trả trạng thái online, lastSeen và transport capabilities; không trả secret/token/socket ID của người khác. Heartbeat app mỗi 10 giây, lease 30 giây, quét 5 giây. Socket disconnect có thể được phát hiện sớm hơn hết lease; hai loại thời gian được đo riêng.
+Nhóm dùng TypeScript, Node.js, React/Vite, Socket.IO và WebRTC. Socket.IO cung cấp kênh sự kiện với kết nối outbound; DataChannel cung cấp kênh peer hai chiều. Nhóm bổ sung logic giao tin, quyền truy cập, retry, ordering và phục hồi ở tầng ứng dụng.
 
-## 5. Thiết lập kết nối và NAT
+So với chỉ có một chat server, thiết kế cho phép payload đi trực tiếp khi điều kiện phù hợp. So với chỉ dùng WebRTC, application relay cung cấp tuyến dự phòng qua endpoint truy cập được mà không yêu cầu mỗi user mở cổng.
 
-Nguồn chọn Peer ID từ discovery/hội thoại, lookup khi signaling đang kết nối, rồi thử DataChannel. Peer ID nhỏ hơn làm offer; negotiation đang chạy được dùng lại để tránh tạo offer chồng nhau. SDP/ICE chuyển qua signaling. ICE candidate được đệm trước remote description.
+| Mode   | Đường dữ liệu                            | Bằng chứng                                 |
+| ------ | ---------------------------------------- | ------------------------------------------ |
+| DIRECT | DataChannel, cặp ICE không dùng TURN     | Selected candidate pair và log peer        |
+| TURN   | DataChannel qua candidate loại relay     | Selected candidate pair có relay candidate |
+| RELAY  | Envelope qua Socket.IO application relay | relay:send và FORWARD cùng Message ID      |
 
-Sau DataChannel open, client kiểm tra selected candidate pair qua getStats trước khi báo ready. Nếu candidate không relay thì mode DIRECT; nếu có relay candidate thì TURN. Nếu không xác định được đường, client không tự tuyên bố DIRECT mà chuyển application relay. DIRECT failure được đánh dấu cooldown, sau cooldown có thể tạo kết nối mới.
+STUN hỗ trợ lấy địa chỉ phản xạ và thử NAT traversal, không bảo đảm mọi NAT cho kết nối trực tiếp. TURN chuyển lưu lượng WebRTC; application relay chuyển envelope của ứng dụng. Chỉ cấu hình ICE server chưa đủ để kết luận đường được chọn là TURN.
 
-DataChannel không mở trong timeout hoặc gửi/ACK lỗi dẫn tới RELAY. Relay giữ outbound connections từ peer nên không đòi peer mở inbound port. Checkbox ưu tiên relay là công cụ chọn route, không phải bằng chứng NAT. Chứng minh fallback bằng đóng một PC đang hoạt động khác với chứng minh mạng thật chặn đường trực tiếp.
+Cơ sở giao thức được tham khảo từ RFC 8445, RFC 8489, RFC 8656, RFC 8831 và tài liệu Socket.IO.
 
-TURN tùy chọn qua VITE_ICE_SERVERS, có sample coturn. Chưa có nghiệm thu coturn public trong working tree này. DataChannel qua TURN không được trình bày như P2P không qua server.
+## 6. Kiến trúc hệ thống
 
-## 6. Protocol và reliable delivery
+![Các thành phần và đường truyền của DS01](architecture.png)
 
-Envelope chứa Message ID, Session ID, sender/receiver, group khi có, type, timestamp, body, mode, attempt, sequence và logicalTime. Types gồm text, attachment, file-chunk và ack; ACK dùng ackFor trỏ Message ID gốc. Zod kiểm tra schema, tối đa 4000 ký tự text và 8192 byte wire. UTF-8 có thể đạt giới hạn byte trước giới hạn ký tự.
+Signaling, từng relay và web server có process, cổng và lifecycle riêng. Browser tạo các peer với phiên và storage tách biệt. Những thành phần này có thể cùng host hoặc đặt trên các máy chủ khác nhau.
 
-Sender lưu pending, gửi qua transport, chuyển sent và chỉ delivered khi nhận ACK ứng dụng đúng sender/session/Message ID. ACK Socket.IO từ relay chỉ xác nhận server xử lý request, không thay ACK receiver. Receiver lưu trước ACK; duplicate không lưu lại nhưng vẫn ACK để nguồn dừng retry.
+| Thành phần        | Trách nhiệm                                                       |
+| ----------------- | ----------------------------------------------------------------- |
+| Signaling         | Tài khoản/phiên, discovery, lease, SDP/ICE, nhóm và key directory |
+| Application relay | Peer ID → socket, validation, forwarding, mailbox                 |
+| Relay dự phòng    | Tuyến dự phòng, journal replica và discovery overlay              |
+| Web peer          | Chọn đường, gửi/nhận, ACK/retry, lịch sử và hiển thị              |
+| Web server        | Phục vụ giao diện tĩnh hoặc dev server                            |
+| TURN              | Allocation và chuyển tiếp lưu lượng WebRTC                        |
 
-Timeout ACK mặc định 2 giây, tối đa 3 attempt. Sau lỗi DIRECT, lần thử tiếp dùng RELAY. Nếu mọi lần không được xác nhận, trạng thái failed. Đây là best effort với bounded retransmission; failed không chứng minh receiver chắc chắn chưa từng nhận, vì ACK có thể mất. Retry thủ công text giữ Message ID để dedup còn tác dụng.
+Signaling/relay dùng Socket.IO qua HTTP long-polling hoặc WebSocket; endpoint công khai dùng HTTPS/WSS khi có TLS. DataChannel dùng ngăn xếp WebRTC, không phải một HTTP request cho từng tin.
 
-Peer close reject các promise chờ và dừng transport. Khi khởi tạo phiên mới, các pending/sent chưa hoàn tất được đánh dấu failed; không âm thầm biến thành delivered hoặc treo vĩnh viễn. UI chỉ gửi lại khi người dùng chọn retry.
+Signaling không chuyển chat body giữa hai peer. API kiểm tra quyền chỉ dùng thông tin cần cho quyền truy cập. Kho đồng bộ tài khoản nhận bản sao đã mã hóa; chức năng lưu đó tách biệt với đường giao tin.
 
-## 7. Ordering và mô hình nhất quán
+## 7. Thiết kế thành phần và giao thức
 
-Sequence tăng theo sender/conversation, được khôi phục từ lịch sử; session cá nhân được giữ qua restart khi lịch sử còn. Logical time cập nhật theo thời gian đã quan sát và khi nhận, giúp merge ổn định. Bản sửa không chỉ sort timestamp rồi UUID vì hai tin cùng timestamp hoặc đồng hồ lùi sẽ đảo sequence.
+PeerClient phối hợp DirectTransport, MessageDelivery, FileTransfer và ChatStore. DirectTransport quản lý kết nối; MessageDelivery quản lý sự kiện/ACK; ChatStore là ranh giới persistence.
 
-orderMessages tạo các chain theo conversation/sender/session, sort sequence trong chain rồi merge các đầu chain theo logical time và tie-break ổn định. Cách này giữ thứ tự sender và tránh comparator không bắc cầu khi so nhiều sender. Với lịch sử tối đa 1000 dòng, chi phí merge đơn giản chấp nhận được cho prototype.
+Ví dụ một envelope:
 
-Không bảo đảm total order hoặc causal broadcast giữa mọi sender. Hai receiver có thể quan sát hai tin gửi đồng thời từ B/C theo thứ tự khác nhau, miễn không mất/trùng và không phá thứ tự cùng sender. Dữ liệu cũ không có logicalTime vẫn được xử lý bằng timestamp và chain sequence.
+```json
+{
+  "messageId": "f5515419-f620-4823-a416-560033e3e0bf",
+  "sessionId": "9110ba98-e1b4-4936-9a9b-1cb2daa63dc9",
+  "senderId": "peer-a",
+  "receiverId": "peer-b",
+  "groupId": null,
+  "type": "text",
+  "timestamp": 1795180000000,
+  "logicalTime": 1795180000001,
+  "body": "Xin chào",
+  "mode": "DIRECT",
+  "ackRequested": true,
+  "attempt": 1,
+  "sequence": 1
+}
+```
 
-## 8. Nhóm và concurrency control
+Message ID nhận diện một sự kiện. Session ID và sequence xác định chuỗi hội thoại. Retry giữ ID, nội dung và ordering metadata; mode/attempt được phép đổi. Fan-out nhóm tạo envelope riêng từng receiver, cùng sự kiện logic.
 
-Nhóm có ID, tên, owner, members và version. Create/add giới hạn tối đa 16 thành viên. Owner thêm người; owner hoặc chính thành viên có thể xóa. Khi owner rời nhóm, Peer ID nhỏ nhất còn lại làm owner; nhóm rỗng archived.
+ACK có Message ID riêng, ackFor trỏ tới tin gốc và ackRequested=false. Receiver ACK sau khi chấp nhận lưu; sender kiểm tra ackFor, session, sender/receiver, group và sequence. RPC ACK của relay không thay ACK ứng dụng.
 
-Client gửi version đã biết trong group:change. Signaling chỉ chấp nhận nếu version hiện tại khớp, tạo state tiếp theo, lưu snapshot thành công rồi mới phát group:update/ACK. Hai thao tác cùng version chỉ một được chấp nhận; thao tác còn lại bị stale để caller lấy state mới, tránh lost update.
+Text giới hạn 4000 ký tự; plaintext envelope tối đa 8192 byte UTF-8 sau chuẩn hóa. File cá nhân tối đa 512 KiB; attachment envelope tối đa ba metadata. E2EE dùng envelope ngoài giới hạn 16384 byte và giữ các trường cần cho routing.
 
-Chat nhóm là multi-unicast: một Message ID chung nhưng envelope riêng tới từng receiver. ACK/status lưu theo receiver, UI gộp thành một bubble nhưng Chi tiết vẫn hiện từng người. Người offline giữ membership, lần gửi đến họ failed; không có offline queue. Người bị xóa giữ lịch sử cũ nhưng không nhận/gửi được tin nhóm mới nếu không được thêm lại.
+## 8. Định danh và khám phá peer
 
-## 9. Chuyển file và toàn vẹn dữ liệu
+Luồng tài khoản dùng Peer ID ổn định user_<username>. Luồng thử nghiệm kỹ thuật dùng Peer ID/proof riêng. Luồng DHT nâng cao tạo định danh gắn với khóa ký.
 
-File cá nhân tối đa 512 KiB, chia chunk 2304 byte, mỗi chunk có envelope/ACK/retry. Base64 chunk tối đa 3072 ký tự để vừa wire budget cùng metadata. Receiver kiểm tra count/index/size, metadata nhất quán và duplicate chunk content; assembly tối đa 4 transfer, bỏ dở sau 2 phút.
+Bản tích hợp đăng ký Peer ID, display name, status và connectivity metadata. Signaling kiểm tra proof, phiên và xung đột ID trước khi cấp token relay. List/lookup không trả token hoặc socket nội bộ của peer khác.
 
-Ghép đủ byte mới tính SHA-256 và ghi IndexedDB. File sai hash bị từ chối, giữ tombstone ngắn để retry chunk cuối không được ACK nhầm như transfer mới chưa đủ. Sau tất cả chunk ACK, nguồn gửi attachment notification. Receiver chỉ ACK notification có hash nếu đã có byte file được xác minh; reload giữa chừng không được tạo delivered giả.
+Heartbeat mặc định 10 giây; lease mặc định 30 giây và có vòng quét. Disconnect, hết hạn hoặc thu hồi phiên làm cập nhật registry online và presence. Connection mapping được tái tạo khi kết nối lại; registry danh tính được giữ bền vững.
 
-UI hiển thị tiến trình và tải về từ IndexedDB. SHA-256 kiểm tra toàn vẹn, không phải chữ ký xác minh tác giả độc lập; binding tác giả do session/auth/transport. Chưa resume transfer dở hoặc gửi file nhóm. File được tải như dữ liệu, không tự thực thi markup.
+Ở thiết bị mới, dữ liệu phụ thuộc hai lớp: storage tại browser và bản sao tài khoản đã mã hóa. Luồng chuyển thiết bị xác nhận tiếp quản phiên, khôi phục kho mã hóa và giữ Peer ID. Những dữ liệu chỉ còn ở thiết bị cũ không tự xuất hiện nếu chưa có bản sao phù hợp.
 
-## 10. Fault tolerance, relay failover và phục hồi
+## 9. Đồng thời, đồng bộ và nhất quán
 
-Pool tối đa 4 relay khác nhau; cả hai peer duy trì outbound connection tới cùng pool. Khi relay ưu tiên không dùng được hoặc forwarding lỗi, client thử relay còn kết nối. Cùng ID được giữ nếu cần retransmit; receiver dedup kể cả tin đến từ nhiều relay.
+Hai peer gửi gần đồng thời được quản lý bằng Message ID độc lập và pending ACK theo message/receiver. Tin dữ liệu nhận được tuần tự hóa ở ranh giới lưu; ACK xử lý riêng để một thao tác lưu chậm không chặn xác nhận của lần gửi khác.
 
-Failover này không sao chép offline queue hoặc tạo consensus giữa relay. Relay không giữ chat history; signaling vẫn kiểm tra membership và là điểm lỗi đơn. Restart signaling lấy lại hash/groups từ file và các browser tự đăng ký/nối lại. Một signaling writer cho một state file; registry hỏng không được tự reset.
+Hai sửa đổi nhóm cùng version được xử lý bằng OCC. Signaling kiểm tra quyền/version, lưu một kết quả hợp lệ, tăng version và phát update. Request stale bị từ chối; client lấy state mới để thực hiện thao tác tiếp theo.
 
-Các failure model được kiểm tra: peer/transport ngắt, DataChannel chưa mở hoặc đang mở bị đóng, ACK vắng, relay dừng, signaling restart, duplicate, state hỏng và file hash sai. WAN loss, host failure nhiều máy và TURN public vẫn cần môi trường triển khai thật.
+Journal của relay dùng logical clock, origin và tombstone. Merge xác định giúp replica hội tụ khi nhận write/delete theo thứ tự khác nhau.
 
-## 11. Bảo mật và quản lý dữ liệu
+| State            | Mô hình                                             |
+| ---------------- | --------------------------------------------------- |
+| Membership       | Kiểm soát version tại một signaling writer          |
+| Thứ tự hội thoại | Sequence trong chuỗi sender/session, merge xác định |
+| Bản nhận         | Dedup sender/Message ID, kiểm tra nội dung bất biến |
+| Replica journal  | Eventual convergence sau trao đổi                   |
 
-Các biện pháp gồm JWT relay, sender binding, quyền nhóm, local block cho chat cá nhân, schema/size validation, callback guard, event rate budget, secret qua env và log có thời gian/service/event. Production từ chối secret thiếu, ngắn hoặc placeholder. .env/.data không commit; bootstrap tạo secret ngẫu nhiên mà không in ra log.
+Không đặt ra total order toàn hệ thống. Các bất biến được kiểm tra: không nhận trùng trong phạm vi dedup; stale version không ghi đè state mới; fan-out giữ cùng danh tính sự kiện; người nhận đã ACK không bị gửi lại chỉ vì người khác lỗi.
 
-State snapshot ghi tệp tạm rồi rename; nếu ghi lỗi thì mutation nhóm không được broadcast thành công. Đây là atomic update cho một writer, không thay thế cơ sở dữ liệu replicated hoặc bảo đảm mọi kiểu power-loss. Cần backup và quyền file phù hợp môi trường chạy.
+## 10. Chịu lỗi và phục hồi
 
-Web giữ tối đa 1000 dòng history và 10000 dedup keys; file trong IndexedDB theo scope peer. Không tuyên bố exactly-once vĩnh viễn. Xóa lịch sử không xóa registry danh tính server. Mất browser storage có thể mất secret, nhóm cần có quy trình bảo quản profile; không có endpoint tự chiếm lại ID của người khác.
+Failure model gồm crash/restart, mất kết nối, RPC không phản hồi, mất ACK, trùng và đảo thứ tự. Timeout/lease xác định cách xử lý; một peer chậm có thể tạm bị coi là không khả dụng.
 
-Relay Socket.IO đọc payload; chưa E2EE. HTTPS/WSS bảo vệ transport khi triển khai đúng nhưng không loại quyền đọc của relay. TURN credentials gửi cho browser là credential dùng ICE, không phải PEER_SECRET/JWT_SECRET.
+| Cơ chế                 | Mặc định                               |
+| ---------------------- | -------------------------------------- |
+| Thiết lập DataChannel  | Tối đa 10 giây, có thể cấu hình        |
+| Đọc selected ICE route | Cửa sổ tối đa 1,5 giây khi kênh mở     |
+| RPC signaling/relay    | Timeout 4 giây                         |
+| ACK ứng dụng           | 2 giây sau khi transport chấp nhận gửi |
+| Retry                  | Tối đa 3 lần truyền trong một lượt     |
+| Heartbeat/lease        | 10 giây / 30 giây, cộng chu kỳ quét    |
+| Mailbox nâng cao       | Hạn lưu mặc định 24 giờ                |
 
-## 12. Kết quả kiểm thử tự động
+Kênh DIRECT đang mở bị đóng/lỗi làm DirectTransport phát mode RELAY. Retry dùng cùng ID; receiver chống trùng nếu bản trước đã lưu nhưng ACK bị mất.
 
-{{EVIDENCE_SUMMARY}}
+Đóng peer hủy promise chờ. Pending/sent/forwarded của phiên gián đoạn được phục hồi thành chưa xác nhận thay vì báo đã giao. Nếu relay không trả RPC, peer thử tuyến khác; hết tuyến/ngân sách thì báo failed.
 
-Các test regression gồm callback sai kiểu, identity/group restart, registry hỏng, ownership transfer, equal-clock ordering, interrupted ACK wait/recovery, concurrent contact writes, failover relay, full-file byte/hash verification và corruption rejection. Vitest dùng sockets thật nhưng không tự chứng minh browser/NAT; browser suite tách riêng.
+Queued chỉ có nghĩa relay đã lưu. ACK người nhận mới xác nhận delivered. Replica bất đồng bộ có cửa sổ giữa ghi local và lan truyền; hai relay cùng host vẫn thuộc một failure domain.
 
-Browser acceptance dùng ba context cách ly, signaling/primary relay/backup relay/web ở process riêng, profile tạm. Có kiểm tra DIRECT thật không FORWARD, đóng PC rồi fallback không bật checkbox, file/IndexedDB, group/concurrent sends, reload history, signaling restart, backup relay và mobile overflow. Ảnh chụp không dùng dữ liệu người dùng thật.
+## 11. Bảo mật
 
-![Giao diện chat desktop](evidence/ui-chat-desktop.png)
+Mật khẩu được băm bằng scrypt với salt riêng; server không lưu mật khẩu plaintext. Token có thời hạn, lưu hash tại server và có thể thu hồi. Relay kiểm tra token, subject và phiên trước request.
 
-![Giao diện đăng nhập](evidence/ui-welcome.png)
+Sender binding, membership và block policy được kiểm tra ở các ranh giới phù hợp. Schema kiểm tra ID, type, nội dung, thời gian, ordering metadata, SDP/ICE và kích thước. Rate limit hạn chế lạm dụng; callback sai được chặn để không làm process thoát.
 
-## 13. Thí nghiệm hiệu năng và khả năng mở rộng
+Secret dịch vụ lấy từ môi trường hoặc kho secret riêng. Repository dùng placeholder. VITE_* là cấu hình có thể xuất hiện trong bundle browser, không phải kho cất khóa ký server.
 
-{{LOAD_SUMMARY}}
+Khi bật E2EE, peer dùng ECDH P-256, HKDF và AES-GCM; pin danh tính và luồng thay khóa kiểm soát thay đổi identity. Envelope ngoài vẫn lộ metadata định tuyến. Replica RPC dùng HMAC, timestamp và nonce; URL thành viên được giới hạn.
 
-Phép đo tạo simulated headless peers trong một process, mỗi peer có kết nối mạng riêng tới services. Thời gian kết thúc khi Socket.IO recipient nhận, không đo ACK ứng dụng hoặc persistence. p50/p95/max không được dùng làm latency WAN. Serialized payload bytes chỉ là ước lượng, không gồm overhead đầy đủ TCP/TLS/Socket.IO.
+HTTPS/TLS bảo vệ kết nối tới dịch vụ; E2EE bảo vệ nội dung khỏi relay. Hai cơ chế giải quyết những ranh giới khác nhau. An toàn vẫn phụ thuộc thiết bị, khóa và mã giao diện mà người dùng chạy.
 
-Fan-out nhóm n người cần n−1 envelope mỗi tin; relay ingress/egress tăng theo số receiver và kích thước payload. Chunk file phát sinh nhiều ACK và thao tác hash/storage. Hạn chế 16 người/nhóm, 512 KiB/file, rate budget và bounded retries giới hạn tài nguyên ở prototype.
+## 12. Các chức năng nâng cao
 
-Để mở rộng: nhiều relay phân tán host/region, đo chọn relay theo latency/load, tách metrics, cân nhắc persistent queue/replication và replicated signaling với authority/version rõ. Những hướng này không được xem là đã triển khai chỉ vì có relay pool.
+Bảng này mô tả phần mở rộng của bản tích hợp:
 
-## 14. Triển khai và tái lập kết quả
+| Chức năng              | Cách thực hiện                                   |
+| ---------------------- | ------------------------------------------------ |
+| Nhiều relay            | Pool kết nối outbound                            |
+| Chọn theo latency/load | RTT làm mượt, số peer và pending mail            |
+| Tự chuyển relay        | Timeout/disconnect và thử tuyến dự phòng         |
+| Bầu super-peer         | Ứng cử relay đồng hành, endpoint, lease và merge |
+| Replication            | Journal qua HTTP giữa các kho riêng              |
+| Store-and-forward      | Mailbox có TTL; queued khác delivered            |
+| E2EE                   | Khóa đầu cuối, ciphertext và xác thực metadata   |
+| DHT                    | Hash ring, signed record có thời hạn             |
+| File transfer          | Chunk 2304 byte, ACK, SHA-256, IndexedDB         |
+| STUN                   | Binding và thu thập candidate trong ICE          |
+| WebRTC/TURN            | DataChannel qua selected relay candidate         |
+| Thoại/video            | Nhận cuộc gọi, quyền thiết bị, mute, hangup      |
+| Load test              | Simulated peers và giới hạn concurrency          |
 
-Node ^20.19 hoặc >=22.12 đáp ứng app; browser QA dùng Node 22.12+ và Chromium đã cài. npm ci, init-env, ba lệnh start:signaling/start:relay/dev:web là đường chạy local. npm run test:browser tự tạo port/profile/state lab, không dừng server đang dùng; không cần dữ liệu nhóm thật.
+DHT/election là nguyên mẫu trên tập relay cấu hình, không phải Kademlia/Raft hoàn chỉnh. Replication mailbox không sao chép toàn bộ tài khoản/nhóm của signaling. Resume file dang dở qua restart là hướng mở rộng.
 
-deploy có Dockerfile/Compose gồm signaling, primary/backup relay và static web; named volume giữ signaling state. Có Caddy reverse proxy/HTTPS mẫu và coturn lab mẫu. Docker runtime chưa được cài ở môi trường kiểm tra này; không tuyên bố đã build/run container. Cần thử trên máy nhóm và giữ log.
+## 13. Cài đặt và tổ chức mã
 
-Khi public: điền domain thật, server secrets thật, HTTPS/WSS, build lại VITE_* URLs. SIGNAL_INTERNAL_URL phải trỏ đúng signaling từ relay. Không dùng localhost như endpoint của máy chủ từ browser ở máy khác. Không dùng cùng snapshot cho nhiều writer hoặc xóa volume trong phép thử restart.
+Node theo package là ^20.19.0 hoặc từ 22.12.0. Bộ kết quả hiện ghi nhận Windows/Node v25.2.1. Browser cần WebRTC, Web Crypto và IndexedDB.
 
-## 15. Hạn chế, công việc cần bổ sung và kết luận
+```powershell
+npm.cmd ci
+npm.cmd run setup:env
+```
 
-Mã hiện tại giải quyết các lỗi đã tái hiện và bổ sung file transfer, relay failover, ICE configuration và giao diện mới. Local integration/browser cho thấy control/data plane hoạt động theo thiết kế trong phạm vi đã chạy.
+Mở ba terminal, mỗi terminal chạy một process:
 
-Nhóm vẫn cần endpoint public, chứng cứ khác mạng/NAT, TURN nếu muốn nghiệm thu tính năng đó, kết quả Docker, thông tin/phân công thật, commit cá nhân, tag/release và demo cả nhóm. Bản báo cáo cuối nên bổ sung topology mạng thực, ảnh/log lỗi–phục hồi, phân tích số đo và thông tin học phần; đề khuyến nghị 20–30 trang không tính phụ lục. Không kéo dài bằng kết quả chưa chạy hoặc dữ liệu giả.
+```powershell
+npm.cmd run dev:signaling
+npm.cmd run dev:relay
+npm.cmd run dev:web
+```
 
-Phạm vi chưa triển khai: E2EE, offline store-and-forward, DHT, voice/video, election super-peer và signaling replication. Chúng thuộc các hướng nâng cao khác, không cần làm tất cả để đáp ứng chức năng tối thiểu.
+Signaling mặc định 4001, relay 4002, web dev 5173. Localhost trỏ về chính thiết bị mở browser. Bản tích hợp có demo:local/demo:public và dashboard PID/URL/log.
 
-## Tài liệu tham khảo và nguồn
+Kho bền vững khi chạy Node mặc định là DS01-runtime/data ngoài source; DS01_DATA_DIR cho phép cấu hình lại. Docker sử dụng volume theo deploy configuration.
 
-- COURSE PROJECT SPECIFICATION.pdf do giảng viên cung cấp, mục 4, 5, 9–13.
-- Source code và test trong repository này; source fingerprint và commit kèm bằng chứng, working tree có thể chưa được commit.
-- [W3C WebRTC specification](https://www.w3.org/TR/webrtc/), API RTCPeerConnection/DataChannel và stats.
-- [Socket.IO documentation](https://socket.io/docs/v4/), event/ACK/reconnection.
-- [Caddy reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy), reverse proxy và WebSocket.
-- [coturn configuration example](https://github.com/coturn/coturn/blob/master/examples/etc/turnserver.conf), các tùy chọn TURN lab.
-- React, Vite, TypeScript, Zod, Express, jsonwebtoken và các thư viện theo package-lock.json. Nhóm cần trích nguồn hình/thuật toán bổ sung nếu sử dụng tài liệu khác.
+| Thư mục                  | Trách nhiệm                                        |
+| ------------------------ | -------------------------------------------------- |
+| src/shared               | Protocol, transport, delivery, ordering, peer core |
+| src/signaling            | Auth, discovery, nhóm và SDP/ICE                   |
+| src/relay                | Routing và mở rộng relay                           |
+| src/server-kit           | Runtime, log, secret và storage                    |
+| src/web-peer             | Giao diện, lịch sử, khóa và account sync           |
+| deploy / scripts / tests | Triển khai, công cụ và kiểm thử                    |
+| docs                     | Tài liệu dùng chung                                |
 
-## Phụ lục: nghiệm thu thủ công
+## 14. Kiểm thử và kết quả
 
-Xem MANUAL-ACCEPTANCE.md và manual-results.csv. Mỗi lỗi lưu Test ID, điều kiện trước thử, bước tái hiện, mong đợi/thực tế, Message ID/Group ID/version, bằng chứng, người xử lý, commit sửa và retest. Bảng thủ công không tự chuyển PASS khi code có tên tính năng tương ứng.
+Đợt evaluate ngày 20/11/2026 kết thúc lúc 23:26 giờ Việt Nam: 247/247 test đạt trên working tree tích hợp. Ma trận chọn của mục 9 có 8 functional, 3 concurrency/conflict, 3 fault/recovery và 3 security/invalid-data đạt. Hiệu năng được đo bằng thí nghiệm riêng.
+
+| Nhóm           | Ví dụ                                                                     |
+| -------------- | ------------------------------------------------------------------------- |
+| Functional     | Registration, metadata, hai chiều, dedup, ordering, nhóm/file mã hóa, DHT |
+| Concurrency    | Trùng ID khi đăng ký; merge write/delete; hai sự kiện dùng cùng ID        |
+| Fault/recovery | Relay không trả RPC; signaling restart; offline mail qua relay khác       |
+| Security       | Đổi metadata/ciphertext; replay replica request; record giả/hết hạn       |
+
+Các lần browser ngày 20/11 ghi nhận 54 kiểm tra cơ bản, 19 advanced và 16 account recovery đạt. Phạm vi là Chrome thật, DataChannel/IndexedDB và service trên loopback. Bộ advanced chạy STUN/TURN lab và media thật; account recovery dùng browser context/origin khác nhau.
+
+Baseline Nam 8677e28 có 78 test B2/B4 đạt; toàn bộ baseline có 118/120 test đạt. Hai test công cụ đo tải/benchmark cho cùng lỗi trên baseline main 60867fe. Các sửa đổi công cụ thuộc phần tích hợp và cần đi cùng bản phát hành chung.
+
+Các con số mô tả các snapshot khác nhau, không thay thế nhau. Hồ sơ tổng hợp ở evidence/validation-2026-11-20.json giữ mốc chạy, commit/fingerprint có sẵn và phạm vi. Bảng manual-results.csv dành cho kết quả mỗi buổi nghiệm thu.
+
+## 15. Đánh giá hiệu năng
+
+Thử tải ngày 20/11 trên localhost dùng simulated Socket.IO peers, kiểm tra đúng socket nhận và nguyên envelope. Latency đo đến sự kiện nhận, không bao gồm browser persistence/ACK ứng dụng.
+
+| Peers | Messages | Workers | Delivered | Throughput (message/s) | p50 (ms) | p95 (ms) |
+| ----- | -------- | ------- | --------- | ---------------------- | -------- | -------- |
+| 3     | 60       | 1       | 60        | 395,39                 | 2,15     | 3,84     |
+| 20    | 200      | 8       | 200       | 453,30                 | 15,85    | 31,31    |
+| 50    | 500      | 20      | 500       | 755,24                 | 24,68    | 43,97    |
+| 100   | 1000     | 50      | 1000      | 772,30                 | 58,25    | 115,13   |
+
+Mỗi kịch bản có 0 duplicate, 0 misrouted, 0 corrupted delivery. Đây là điểm đo, không phải giới hạn công suất tối đa.
+
+Thí nghiệm Chrome riêng đo từ lưu pending đến lưu delivered, gồm kiểm tra quyền và ACK ứng dụng. Mỗi mode có 20 mẫu sau một warmup, body 256 byte:
+
+| Mode   | p50 (ms) | p95 (ms) | Max (ms) |
+| ------ | -------- | -------- | -------- |
+| DIRECT | 99,50    | 144,50   | 144,70   |
+| RELAY  | 127,70   | 159,60   | 167,20   |
+
+Median RELAY cao hơn DIRECT khoảng 28,20 ms trong bộ mẫu này. Scheduling, persistence và quyền truy cập cũng ảnh hưởng, nên không quy toàn bộ chênh lệch cho một bước mạng.
+
+Payload relay hai chiều xấp xỉ 2 × message rate × envelope bytes, chưa tính framing, ACK, mã hóa và replication. Relay cùng host chia sẻ CPU/uplink; tăng số relay không tự động tăng tài nguyên host.
+
+## 16. Kịch bản trình diễn
+
+Ba peer A/B/C dùng tài khoản và browser profile tách biệt. Laptop Wi-Fi và điện thoại 4G/5G tạo hai miền mạng; peer thứ ba dùng thiết bị hoặc context riêng.
+
+| # theo 5.10 | Thao tác                               | Dấu hiệu quan sát                      |
+| ----------- | -------------------------------------- | -------------------------------------- |
+| 1           | Mở URL dịch vụ và web                  | Health, dashboard, process phục vụ     |
+| 2           | Khởi động A/B/C                        | Ba danh tính riêng                     |
+| 3           | Đăng nhập/discovery                    | REGISTER và presence                   |
+| 4           | Chat trên DataChannel                  | DIRECT và ACK                          |
+| 5           | Đối chiếu Message ID                   | DIRECT ở peer, không FORWARD tại relay |
+| 6           | Dùng cặp có đường trực tiếp bị hạn chế | Tin tự đi RELAY                        |
+| 7           | Đối chiếu log                          | SEND/RECEIVE/FORWARD cùng ID           |
+| 8           | Tạo nhóm A/B/C                         | Membership/version và fan-out          |
+| 9           | B/C gửi gần đồng thời                  | Không trùng, ACK từng receiver         |
+| 10          | Dừng đột ngột C                        | Presence đổi theo disconnect/lease     |
+| 11          | Đóng DIRECT đang mở                    | Fallback tự động                       |
+| 12          | Mở lại C                               | Giữ danh tính/lịch sử và nhận tin mới  |
+
+Dùng Task Manager/Details để xem Node PID và bộ nhớ, Chrome Task Manager để xem renderer, dashboard để xem URL/log. Không suy ra chia sẻ bộ nhớ từ số virtual memory.
+
+Checkbox ép relay phục vụ kiểm tra chủ đích; selected candidate và log giải thích đường thực tế. Kịch bản chi tiết ở demo-script.md và MANUAL-ACCEPTANCE.md.
+
+## 17. Triển khai và CI/CD
+
+Web được phục vụ qua HTTPS; reverse proxy chuyển signaling/relay đến các process riêng. TURN có endpoint/allocation riêng. Nếu laptop chạy tunnel, laptop là host dịch vụ; tunnel công khai URL và chuyển tiếp về đó. Dừng host/tunnel làm URL phiên dừng.
+
+Triển khai giữ registry, khóa, vault và journal trên storage bền vững. Không xóa volume để thử restart; không cho hai signaling writer cùng ghi một state file.
+
+Thiết kế CI/CD của bản phát triển gồm verify dependency/type/lint/test/build; browser regression; build app/web container; publish image gắn commit SHA; manual deployment qua SSH host identity đã pin và health check.
+
+Rollback image dùng release trước; dữ liệu/migration cần backup riêng. Kết quả pipeline được ghi bằng Actions run/artifact tương ứng, không suy ra từ việc có file YAML.
+
+Với B2/B4 và tài liệu chung, nhóm push Nam rồi review Pull Request Nam → main. Workflow CI/CD được hợp nhất cùng phần D1 và các dependency liên quan.
+
+## 18. Giới hạn và hướng phát triển
+
+Tài khoản/membership có một signaling coordinator. Nhiều relay bảo vệ đường dữ liệu trong phạm vi lỗi relay, không tự cung cấp failover cho mọi state. Replica bất đồng bộ có thể tạm khác và có cửa sổ mất ghi trước lan truyền.
+
+Delivery là best effort với retry hữu hạn, ACK và dedup có retention. Failed nghĩa thiếu xác nhận trong ngân sách, không chứng minh receiver chưa từng lưu. Không có cam kết exactly-once tuyệt đối hoặc total order toàn hệ thống.
+
+Mailbox có TTL/quota; file 512 KiB; browser storage phụ thuộc quota/vòng đời dữ liệu. Thiết bị mới cần bản sao mã hóa và thông tin mở khóa. DHT/election cần làm mới lease.
+
+Hướng mở rộng: relay ở nhiều failure domain, đo trên nhiều cấu hình mạng, telemetry/quota vận hành, resume file, key recovery và giảm phụ thuộc signaling coordinator.
+
+## 19. Kết luận
+
+DS01 P2P Chat tổ chức peer và dịch vụ độc lập giao tiếp qua mạng, ưu tiên WebRTC và có application relay. Message ID, ACK, retry, dedup, sequence và version giải quyết độ tin cậy/đồng thời ở tầng ứng dụng.
+
+Báo cáo phân biệt baseline đã commit, bản tích hợp và từng phép đo để người đọc đối chiếu đúng. Nhóm hoàn thiện thông tin học vụ, hợp nhất mã và điền biên bản demo trước khi chốt report.pdf cùng tag/release.
+
+## 20. Tài liệu tham khảo
+
+- [1] COURSE PROJECT SPECIFICATION.pdf, tài liệu giảng viên cung cấp, 17 trang; mục 4, 5, 9, 10, 11, 13.
+- [2] [Mã nguồn DS01](https://github.com/Ngocnguyen055/DS01).
+- [3] IETF, [RFC 8445 — ICE](https://www.rfc-editor.org/rfc/rfc8445).
+- [4] IETF, [RFC 8489 — STUN](https://www.rfc-editor.org/rfc/rfc8489).
+- [5] IETF, [RFC 8656 — TURN](https://www.rfc-editor.org/rfc/rfc8656).
+- [6] IETF, [RFC 8831 — WebRTC Data Channels](https://www.rfc-editor.org/rfc/rfc8831).
+- [7] Socket.IO, [Delivery guarantees](https://socket.io/docs/v4/delivery-guarantees/).
+- [8] Node.js, [Crypto — scrypt](https://nodejs.org/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback).
+
+Nhóm kiểm tra, hiểu và chịu trách nhiệm về thư viện, mã nguồn, công cụ hỗ trợ và kết quả theo mục 13 của đề bài.
+
+## 21. Phụ lục
+
+| Tệp                                                | Mục đích                              |
+| -------------------------------------------------- | ------------------------------------- |
+| report.md / report.docx / report.html / report.pdf | Nội dung gốc, Word, xem web và bản in |
+| architecture.md / protocol.md                      | Thiết kế thành phần và envelope       |
+| authentication.md / advanced-features.md           | Tài khoản và phần mở rộng             |
+| test-plan.md / implementation-status.md            | Ma trận, phiên bản và kết quả         |
+| demo-script.md / MANUAL-ACCEPTANCE.md              | Kịch bản và bước nghiệm thu           |
+| manual-results.csv                                 | Biên bản từng buổi                    |
+| evidence/validation-2026-11-20.json                | Số liệu tổng hợp có nguồn và phạm vi  |
+
+Ảnh/JSON của đợt cũ trong evidence giữ giá trị lịch sử của chính lần chạy đó; không thay ngày hoặc kết quả để coi thành bằng chứng của phiên bản khác.

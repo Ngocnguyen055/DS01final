@@ -10,25 +10,27 @@ Bản tích hợp đăng ký peerId, identityProof, displayName, status và conn
 
 Các event signal:send/signal:receive mang request, offer, answer và ICE. Bản tích hợp bổ sung signaling cho media. Signaling không chuyển chat body.
 
-Peer ID nhỏ hơn điều phối offer; thao tác signaling theo peer được tuần tự hóa. DataChannel dùng ordered=true. Lỗi/timeout/đóng kênh báo RELAY. Timeout DIRECT mặc định 10 giây. Cặp candidate được chọn quyết định DIRECT/TURN; cấu hình TURN không tự quyết định mode.
+Peer ID nhỏ hơn điều phối offer; thao tác signaling theo peer được tuần tự hóa. Offer/answer/ICE mang `connectionId` và `revision`; request có `requestId`, được echo trong offer trả lời. Tín hiệu của phiên đã đóng, request đã xử lý hoặc revision ICE cũ bị bỏ qua. Candidate đến trước offer được giữ trong hàng đợi có giới hạn. Phần metadata này được bỏ trước khi đưa dữ liệu vào WebRTC. Signaling vẫn nhận định dạng cũ; khi peer đã gửi mã phiên, transport yêu cầu mã đó trên các offer/answer/ICE tiếp theo.
+
+DataChannel dùng ordered=true. Lần gửi chờ DIRECT mặc định 10 giây rồi dùng RELAY, trong khi ICE được giữ tối đa 30 giây tổng cộng. Kênh mở trong khoảng này được dùng cho tin tiếp theo. `directTimeoutMs` và `directBackgroundTimeoutMs` điều chỉnh hai giới hạn trong SDK. Mất kết nối tạm thời trên kênh từng mở dùng relay trong lúc đợi 1,5 giây rồi thử ICE restart một lần, tối đa 15 giây; chỉ Peer ID nhỏ hơn tạo restart offer. Phản hồi timeout của signaling không đóng kênh đã mở; phản hồi từ chối vẫn có hiệu lực. Đóng kênh chủ động và lỗi DataChannel chuyển RELAY ngay. Cặp candidate được chọn quyết định DIRECT/TURN; cấu hình TURN không tự quyết định mode.
 
 ## Envelope
 
-| Trường | Ý nghĩa |
-|---|---|
-| messageId | UUID của sự kiện, giữ nguyên khi retry |
-| sessionId | Phiên hội thoại; nhóm dùng Group ID |
-| senderId / receiverId | Peer gửi và một peer nhận cụ thể |
-| groupId | UUID nhóm hoặc null/không có cho chat cá nhân |
-| type | text, attachment, file-chunk, ack |
-| timestamp / logicalTime | Unix milliseconds và đồng hồ logic |
-| body | Nội dung, tối đa 4000 ký tự |
-| mode | DIRECT, TURN hoặc RELAY |
-| ackRequested | true cho dữ liệu, false cho ACK |
-| ackFor | ID sự kiện được xác nhận, chỉ có ở ACK |
-| attempt | 1 đến 3 trong một lượt gửi |
-| sequence | Thứ tự theo sender và hội thoại |
-| attachments / fileChunk | Metadata file hoặc chunk có SHA-256 |
+| Trường                  | Ý nghĩa                                       |
+| ----------------------- | --------------------------------------------- |
+| messageId               | UUID của sự kiện, giữ nguyên khi retry        |
+| sessionId               | Phiên hội thoại; nhóm dùng Group ID           |
+| senderId / receiverId   | Peer gửi và một peer nhận cụ thể              |
+| groupId                 | UUID nhóm hoặc null/không có cho chat cá nhân |
+| type                    | text, attachment, file-chunk, ack             |
+| timestamp / logicalTime | Unix milliseconds và đồng hồ logic            |
+| body                    | Nội dung, tối đa 4000 ký tự                   |
+| mode                    | DIRECT, TURN hoặc RELAY                       |
+| ackRequested            | true cho dữ liệu, false cho ACK               |
+| ackFor                  | ID sự kiện được xác nhận, chỉ có ở ACK        |
+| attempt                 | 1 đến 3 trong một lượt gửi                    |
+| sequence                | Thứ tự theo sender và hội thoại               |
+| attachments / fileChunk | Metadata file hoặc chunk có SHA-256           |
 
 Plaintext envelope tối đa 8192 byte UTF-8 sau chuẩn hóa. Schema strict từ chối trường lạ hoặc ACK mâu thuẫn. Trạng thái giao tin là state cục bộ, không nhận một trường status từ peer để tự đánh dấu delivered.
 
@@ -44,15 +46,15 @@ Dedup có retention: web giữ tối đa 1000 dòng history và ledger 10000 kh�
 
 ## Trạng thái giao tin
 
-| State | Hiển thị/ý nghĩa |
-|---|---|
-| pending | Đang chuẩn bị |
-| sent | Đã gửi trên DataChannel, chờ xác nhận |
-| forwarded | Relay đã chuyển tiếp, chờ receiver ACK |
-| queued | Mailbox nâng cao đã lưu, chờ peer nhận |
+| State     | Hiển thị/ý nghĩa                                   |
+| --------- | -------------------------------------------------- |
+| pending   | Đang chuẩn bị                                      |
+| sent      | Đã gửi trên DataChannel, chờ xác nhận              |
+| forwarded | Relay đã chuyển tiếp, chờ receiver ACK             |
+| queued    | Mailbox nâng cao đã lưu, chờ peer nhận             |
 | delivered | Peer nhận xác nhận đã lưu; không đồng nghĩa đã đọc |
-| failed | Chưa xác nhận trong ngân sách gửi |
-| received | Bản nhận đã lưu tại peer |
+| failed    | Chưa xác nhận trong ngân sách gửi                  |
+| received  | Bản nhận đã lưu tại peer                           |
 
 Queued thuộc phần mailbox tích hợp. Baseline không có mailbox báo lỗi khi receiver offline. Retry thủ công dùng lại sự kiện gốc.
 

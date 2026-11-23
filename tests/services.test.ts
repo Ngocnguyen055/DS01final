@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import jwt from "jsonwebtoken";
 import { createSignaling } from "../src/signaling/index.ts";
 import { createRelay } from "../src/relay/index.ts";
+import type { Group } from "../src/shared/index.ts";
 
 type Service =
   ReturnType<typeof createSignaling> | ReturnType<typeof createRelay>;
@@ -72,7 +73,7 @@ describe("signaling and relay integration", () => {
       },
     });
 
-    signal.peers.get("peer-b")!.lastSeen = now - 30_001;
+    signal.peers.get("peer-b")!.lastSeen = now - 29_999;
     b.signal.emit("peer:heartbeat");
     expect(
       await b.signal
@@ -186,8 +187,16 @@ describe("signaling and relay integration", () => {
       authorizer,
     );
     const signalUrl = await start(signal);
-    const a = await register(signalUrl, aId, jwt.sign({ sub: aId }, jwtSecret));
-    const b = await register(signalUrl, bId, jwt.sign({ sub: bId }, jwtSecret));
+    const a = await register(
+      signalUrl,
+      aId,
+      jwt.sign({ sub: aId }, jwtSecret, { expiresIn: "1h" }),
+    );
+    const b = await register(
+      signalUrl,
+      bId,
+      jwt.sign({ sub: bId }, jwtSecret, { expiresIn: "1h" }),
+    );
     expect(
       await a.signal.timeout(3000).emitWithAck("peer:lookup", { peerId: bId }),
     ).toEqual({ ok: false, error: "direct chat blocked" });
@@ -244,46 +253,81 @@ describe("signaling and relay integration", () => {
     await expect(receivedGroup).resolves.toMatchObject({ groupId });
   });
 
-  it("discovers three peers, rejects duplicate identity, and resolves concurrent group edits by version", async () => {
-    const signal = createSignaling();
-    const url = await start(signal);
-    const a = await register(url, "peer-a");
-    const b = await register(url, "peer-b");
-    await register(url, "peer-c");
-    expect(
-      (await a.signal.timeout(3000).emitWithAck("peer:list")).peers,
-    ).toEqual(expect.arrayContaining(["peer-a", "peer-b", "peer-c"]));
-    const duplicate = await connect(url);
-    expect(
-      (
-        await duplicate.timeout(3000).emitWithAck("peer:register", {
-          peerId: "peer-a",
-          identityProof: randomUUID() + randomUUID(),
-        })
-      ).ok,
-    ).toBe(false);
-    const created = await a.signal
-      .timeout(3000)
-      .emitWithAck("group:create", { members: ["peer-b", "peer-c"] });
-    expect(created.ok).toBe(true);
-    const id = created.group.id as string;
-    const [first, second] = await Promise.all([
-      a.signal.timeout(3000).emitWithAck("group:change", {
-        groupId: id,
-        memberId: "peer-c",
-        action: "remove",
-        version: 1,
-      }),
-      b.signal.timeout(3000).emitWithAck("group:change", {
-        groupId: id,
-        memberId: "peer-b",
-        action: "remove",
-        version: 1,
-      }),
-    ]);
-    expect([first.ok, second.ok].filter(Boolean)).toHaveLength(1);
-    expect(signal.groups.get(id)?.version).toBe(2);
-  });
+  it.each([false, true])(
+    "discovers three peers, rejects duplicate identity, and resolves concurrent group edits by version (reverse=%s)",
+    async (reverse) => {
+      const signal = createSignaling();
+      const url = await start(signal);
+      const a = await register(url, "peer-a");
+      const b = await register(url, "peer-b");
+      const c = await register(url, "peer-c");
+      const views = new Map<string, Group>();
+      for (const [id, peer] of [
+        ["peer-a", a],
+        ["peer-b", b],
+        ["peer-c", c],
+      ] as const)
+        peer.signal.on("group:update", (group: Group) => views.set(id, group));
+      expect(
+        (await a.signal.timeout(3000).emitWithAck("peer:list")).peers,
+      ).toEqual(expect.arrayContaining(["peer-a", "peer-b", "peer-c"]));
+      const duplicate = await connect(url);
+      expect(
+        (
+          await duplicate.timeout(3000).emitWithAck("peer:register", {
+            peerId: "peer-a",
+            identityProof: randomUUID() + randomUUID(),
+          })
+        ).ok,
+      ).toBe(false);
+      const created = await a.signal
+        .timeout(3000)
+        .emitWithAck("group:create", { members: ["peer-b", "peer-c"] });
+      expect(created.ok).toBe(true);
+      const id = created.group.id as string;
+      const operations = [
+        () =>
+          a.signal.timeout(3000).emitWithAck("group:change", {
+            groupId: id,
+            memberId: "peer-c",
+            action: "remove",
+            version: 1,
+          }),
+        () =>
+          b.signal.timeout(3000).emitWithAck("group:change", {
+            groupId: id,
+            memberId: "peer-b",
+            action: "remove",
+            version: 1,
+          }),
+      ];
+      const results = await Promise.all(
+        (reverse ? [...operations].reverse() : operations).map((operation) =>
+          operation(),
+        ),
+      );
+      const [first, second] = reverse ? [...results].reverse() : results;
+      expect([first.ok, second.ok].filter(Boolean)).toHaveLength(1);
+      const winner = first.ok ? first : second;
+      const loser = first.ok ? second : first;
+      expect(loser).toEqual({
+        ok: false,
+        error: "invalid group change or stale version",
+      });
+      const final = signal.groups.get(id)!;
+      expect(final).toMatchObject({
+        id,
+        version: 2,
+        ownerId: "peer-a",
+        members: first.ok ? ["peer-a", "peer-b"] : ["peer-a", "peer-c"],
+      });
+      expect(winner.group).toEqual(final);
+      await vi.waitFor(() => {
+        for (const peerId of ["peer-a", "peer-b", "peer-c"])
+          expect(views.get(peerId)).toEqual(final);
+      });
+    },
+  );
   it("forwards only to target, rejects sender spoof/oversize/group outsider, and detects disconnect", async () => {
     const signal = createSignaling();
     const signalUrl = await start(signal);

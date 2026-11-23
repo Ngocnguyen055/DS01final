@@ -1,0 +1,87 @@
+name: DS01 manual delivery
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy verified images to the configured production server
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: ds01-delivery
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        target: [app, web]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Normalize image name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "IMAGE_PREFIX=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          file: deploy/Dockerfile
+          target: ${{ matrix.target }}
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.target }}:sha-${{ github.sha }}
+          provenance: mode=max
+          build-args: |
+            VITE_SIGNAL_URL=${{ vars.VITE_SIGNAL_URL || 'http://localhost:4001' }}
+            VITE_RELAY_URL=${{ vars.VITE_RELAY_URL || 'http://localhost:4002' }}
+            VITE_RELAY_URLS=${{ vars.VITE_RELAY_URLS || 'http://localhost:4003' }}
+            VITE_ICE_SERVERS=${{ vars.VITE_ICE_SERVERS }}
+            VITE_E2EE=1
+            VITE_RELAY_SELECTION=latency-load
+  deploy:
+    if: inputs.deploy
+    needs: publish
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Deploy verified revision using pinned SSH host identity
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          REPOSITORY: ${{ github.repository }}
+          REVISION: ${{ github.sha }}
+          SIGNAL_URL: ${{ vars.VITE_SIGNAL_URL }}
+          RELAY_URL: ${{ vars.VITE_RELAY_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ && "$DEPLOY_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ && "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)+$ ]]
+          [[ "$SIGNAL_URL" == https://* && "$RELAY_URL" == https://* ]]
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_KEY" > "$HOME/.ssh/ds01"
+          chmod 600 "$HOME/.ssh/ds01"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          scp -i "$HOME/.ssh/ds01" -o BatchMode=yes -o StrictHostKeyChecking=yes deploy/compose.images.yml scripts/deploy-remote.sh "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+          ssh -i "$HOME/.ssh/ds01" -o BatchMode=yes -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$DEPLOY_PATH' && bash deploy-remote.sh 'ghcr.io/${REPOSITORY,,}' '$REVISION'"

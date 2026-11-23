@@ -1,6 +1,5 @@
 import type { ChatMessage } from "./protocol.ts";
 
-/** Include only user-visible messages belonging to exactly this 1:1 conversation. */
 export function isDirectMessageBetween(
   message: ChatMessage,
   currentPeerId: string,

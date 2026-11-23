@@ -32,10 +32,17 @@
     "benchmark:relay": "node scripts/run-node.mjs benchmark",
     "load:relay": "node scripts/load-relay.mjs",
     "test:browser": "node scripts/browser-smoke.mjs",
-    "setup:env": "node scripts/init-env.mjs",
-    "build:report": "node scripts/build-report.mjs",
     "test:browser:advanced": "node scripts/browser-advanced.mjs",
-    "test:advanced": "node scripts/run-tests.mjs advanced.test.ts"
+    "test:browser:groups": "node scripts/browser-group-calls.mjs",
+    "test:browser:accounts": "node scripts/browser-account-recovery.mjs",
+    "test:advanced": "node scripts/run-tests.mjs advanced.test.ts",
+    "evaluate": "node scripts/evaluate.mjs",
+    "demo:check": "node scripts/demo-public.mjs --check",
+    "demo:local": "node scripts/demo-public.mjs --local",
+    "demo:public": "node scripts/demo-public.mjs --public",
+    "demo:public:check": "node scripts/demo-public.mjs --public-check",
+    "setup:env": "node scripts/init-env.mjs",
+    "build:report": "node scripts/build-report.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

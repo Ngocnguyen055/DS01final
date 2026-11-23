@@ -45,17 +45,32 @@ Dừng C, quan sát log DISCONNECT/TIMEOUT và danh sách online. Với đứt m
 - Để kiểm tra mất kết nối đang hoạt động: mở DIRECT trước, bấm Ngắt kênh trực tiếp, rồi gửi tiếp.
 - Checkbox ép relay chỉ kiểm tra đường relay chủ đích, không phải mô phỏng NAT.
 
+### Kiểm tra hồi quy kết nối sau bản sửa
+
+Khởi động lại signaling/web bằng phiên bản mã nguồn mới và tải lại trang trên cả ba thiết bị. Nếu dùng launcher public, dùng URL do phiên mới in ra. Giữ nguyên dữ liệu tài khoản/lịch sử.
+
+| Ca | Thao tác | Kết quả cần quan sát |
+| --- | --- | --- |
+| DIRECT bình thường | A/B dùng mạng cho phép P2P, gửi hai chiều rồi gửi gần đồng thời | Tin được xác nhận, không nhân đôi; nhãn DIRECT và log SEND/RECEIVE khớp ID; relay không FORWARD ID đó |
+| Điện thoại từng bị RELAY | Giữ tắt ưu tiên relay, chọn tài khoản máy tính, bấm Thử kết nối trực tiếp rồi gửi | Sau thời gian chờ tin vẫn đến bằng RELAY nếu chưa có đường trực tiếp; nếu ICE mở trong 30 giây thì tin tiếp theo dùng DIRECT |
+| Đóng kênh thật | Đang DIRECT, mở Tình trạng kết nối và bấm Ngắt kênh trực tiếp, rồi gửi tiếp | Kênh đóng thật, tin tiếp theo qua RELAY; giao diện không còn câu báo DIRECT đã thành công |
+| Thử lại | Sau khi đóng kênh, bấm Thử kết nối trực tiếp, thử lại vài lần khi nút cho phép | Không treo; chỉ kết quả của phiên hiện hành có hiệu lực; mạng cho phép P2P thì có thể trở lại DIRECT |
+| Gián đoạn/đổi mạng | Khi đang DIRECT, ngắt Wi-Fi ngắn hoặc đổi sang 4G, giữ tab ở trước màn hình | Khi có mạng, tin vẫn có đường RELAY; log có thể ghi DIRECT_RECOVERING/DIRECT_ICE_RESTART; DIRECT trở lại nếu kiểm tra đường mạng thành công, hoặc đóng phục hồi sau giới hạn |
+| Nhóm ba peer | A/B/C cùng nhóm, B/C gửi gần đồng thời | Mỗi người nhận một bản tin, trạng thái giao tin đúng; có thể kết hợp DIRECT và RELAY theo từng cặp |
+
+Xuất log ngay trên từng thiết bị sau lần thử. Tên file chứa Peer ID và thời điểm xuất, ví dụ `ds01-peer-log-user_phone-...txt`. Đối chiếu `DIRECT_ATTEMPT`, `DIRECT_DIAGNOSTIC`, `DIRECT_STALE_SIGNAL`, `DIRECT_ICE_RESTART` và Message ID giữa hai phía. Các lỗi ACK signaling và tín hiệu cũ có test tự động trong `tests/connection-recovery.test.ts`; không cần thao tác thủ công giả lập bằng cách tắt toàn bộ Internet.
+
 ## D. Giao tin tin cậy
 
-| Ca | Thực hiện | Kết quả cần quan sát |
-|---|---|---|
-| Mất ACK | Dùng fault injection/test tương ứng | Retry cùng ID, một bản nhận |
-| Trùng | Phát lại bản hợp lệ | ACK lại, không thêm dòng history |
-| ID xung đột | Cùng ID, khác nội dung | Reject, giữ nội dung ban đầu |
-| Sai ACK context | Đổi session/group/sequence hoặc sender | Không hoàn tất pending khác |
-| Đảo thứ tự | Gửi/nhận thứ tự khác với sequence | Chuỗi sender/session được trình bày hợp lý |
-| Hết retry | Không có tuyến/ACK hợp lệ | Tối đa ba lần, Chưa xác nhận |
-| Close/reload | Đóng khi đang chờ | Không treo vô hạn; history phục hồi có trạng thái đúng |
+| Ca              | Thực hiện                              | Kết quả cần quan sát                                   |
+| --------------- | -------------------------------------- | ------------------------------------------------------ |
+| Mất ACK         | Dùng fault injection/test tương ứng    | Retry cùng ID, một bản nhận                            |
+| Trùng           | Phát lại bản hợp lệ                    | ACK lại, không thêm dòng history                       |
+| ID xung đột     | Cùng ID, khác nội dung                 | Reject, giữ nội dung ban đầu                           |
+| Sai ACK context | Đổi session/group/sequence hoặc sender | Không hoàn tất pending khác                            |
+| Đảo thứ tự      | Gửi/nhận thứ tự khác với sequence      | Chuỗi sender/session được trình bày hợp lý             |
+| Hết retry       | Không có tuyến/ACK hợp lệ              | Tối đa ba lần, Chưa xác nhận                           |
+| Close/reload    | Đóng khi đang chờ                      | Không treo vô hạn; history phục hồi có trạng thái đúng |
 
 Các fault ở protocol dùng test/probe được thiết kế cho việc đó; không cần giả lập bằng thao tác UI không có tác dụng lên ACK. Giữ log theo Message ID để giải thích khác biệt sent/forwarded/queued/delivered.
 

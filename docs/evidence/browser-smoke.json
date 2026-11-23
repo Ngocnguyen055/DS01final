@@ -1,95 +1,19 @@
 {
   "scope": "Real headless Chrome on localhost, separate signaling/relay/web processes; not WAN/NAT evidence",
-  "checks": [
-    {
-      "label": "logged-out page hides cached profile name, Peer ID and avatar",
-      "passed": true
-    },
-    {
-      "label": "wrong account password cannot enter the chat workspace",
-      "passed": true
-    },
-    {
-      "label": "three accounts register, log in, automatically join the peer network and discover display names",
-      "passed": true
-    },
-    {
-      "label": "authenticated profile displays the current account identity",
-      "passed": true
-    },
-    {
-      "label": "real WebRTC DIRECT delivered with no relay FORWARD",
-      "passed": true,
-      "detail": {
-        "messageId": "21bbf12e-26ba-4335-9ff6-91ba26587b10"
-      }
-    },
-    {
-      "label": "established DIRECT closes and automatically falls back without forced checkbox",
-      "passed": true
-    },
-    {
-      "label": "browser file bytes persist in IndexedDB with matching SHA-256",
-      "passed": true
-    },
-    {
-      "label": "group fan-out and simultaneous sends arrive once per receiver",
-      "passed": true
-    },
-    {
-      "label": "browser reload automatically restores authenticated session, history and membership",
-      "passed": true
-    },
-    {
-      "label": "signaling restart restores identities, groups, and browser sessions",
-      "passed": true
-    },
-    {
-      "label": "primary relay handles the baseline before failover",
-      "passed": true
-    },
-    {
-      "label": "browser automatically uses backup relay after primary stops",
-      "passed": true
-    },
-    {
-      "label": "mobile layout has no horizontal page overflow",
-      "passed": true
-    },
-    {
-      "label": "dark theme applies readable foreground colors",
-      "passed": true
-    },
-    {
-      "label": "20 simulated peers deliver 200 concurrent relay messages without loss or duplicates",
-      "passed": true
-    },
-    {
-      "label": "logout clears the tab session and hides chat history",
-      "passed": true
-    },
-    {
-      "label": "logged-out reload stays at the login form",
-      "passed": true
-    },
-    {
-      "label": "same account logs back in with its original Peer ID and local history",
-      "passed": true
-    },
-    {
-      "label": "legacy Peer ID demo remains available and does not mix account chat history",
-      "passed": true
-    },
-    {
-      "label": "no browser JavaScript exceptions",
-      "passed": true
-    }
-  ],
-  "startedAt": "2026-11-03T15:55:38.931Z",
-  "sourceFingerprint": "5c4cfbef146f026350f9bdbef29ef37a3a174787a9f5d0018ba7f0828581bc97",
+  "checks": [],
+  "startedAt": "2026-11-18T20:32:23.088Z",
+  "sourceFingerprint": "c20e95e9796f130b8d948f42d473914b05af9dcd003bd457fe508d9b488d5a49",
   "node": "v25.2.1",
-  "commit": "436a38f86c7ef41593056c6256dde52e699c210e",
+  "commit": "60867fedbd299f74098d35e0560c53e8c67cf820",
   "workingTreeModified": true,
-  "passed": true,
-  "finishedAt": "2026-11-03T15:55:55.934Z"
+  "passed": false,
+  "error": "Error: {\"exceptionId\":1,\"text\":\"Uncaught\",\"lineNumber\":0,\"columnNumber\":142,\"scriptId\":\"32\",\"stackTrace\":{\"callFrames\":[{\"functionName\":\"\",\"scriptId\":\"32\",\"url\":\"\",\"lineNumber\":0,\"columnNumber\":142}]},\"exception\":{\"type\":\"object\",\"subtype\":\"error\",\"className\":\"TypeError\",\"description\":\"TypeError: Cannot read properties of null (reading 'textContent')\\n    at <anonymous>:1:143\",\"objectId\":\"2626472686005672710.3.2\"}}",
+  "logs": {
+    "signal": "",
+    "primary": "",
+    "backup": "",
+    "web": "\n  VITE v7.3.7  ready in 501 ms\n\n  ➜  Local:   http://127.0.0.1:58042/\n",
+    "chrome": "\r\nDevTools listening on ws://127.0.0.1:58082/devtools/browser/c8555fb0-06ba-4c1d-ada3-bfa041b6a8e5\r\n"
+  },
+  "finishedAt": "2026-11-18T20:32:24.859Z"
 }

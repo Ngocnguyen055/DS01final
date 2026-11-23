@@ -100,6 +100,7 @@ describe("persistent project chat authorization", () => {
         identityProof: jwt.sign(
           { sub: peerId },
           process.env.JWT_SECRET || "local-development-only-secret",
+          { expiresIn: "1h" },
         ),
         rtc: class {} as unknown as PeerConfig["rtc"],
         store: stores[index],
@@ -112,7 +113,7 @@ describe("persistent project chat authorization", () => {
       await peer.connect();
     }
     await waitFor(
-      () => logs.filter((r) => r === "relay connected").length === 3,
+      () => logs.filter((r) => r.startsWith("relay connected ")).length === 3,
     );
     expect(await clients[0].syncProjectGroup(PROJECT)).toMatchObject({
       members: [A, B, C],
@@ -152,7 +153,7 @@ describe("persistent project chat authorization", () => {
         token: jwt.sign(
           { sub: A },
           process.env.PEER_SECRET || "local-development-only-secret",
-          { expiresIn: '1h', audience: 'ds01-relay', issuer: 'ds01-signaling' },
+          { expiresIn: "1h", audience: "ds01-relay", issuer: "ds01-signaling" },
         ),
       },
     });
@@ -161,7 +162,7 @@ describe("persistent project chat authorization", () => {
     expect(
       await forged.timeout(2000).emitWithAck("relay:send", wire),
     ).toMatchObject({ ok: false, error: "group access denied" });
-    // Exercise DataChannel receive handler directly; this is a policy simulation, not WebRTC evidence.
+
     await (
       clients[1] as unknown as {
         receive(

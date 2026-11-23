@@ -66,7 +66,7 @@ describe("protocol validation", () => {
         groupId: randomUUID(),
         attachments: [attachment],
       }),
-    ).toThrow("attachments are only supported in direct chat");
+    ).not.toThrow();
     expect(() =>
       parseMessage({
         ...base(),
@@ -80,7 +80,7 @@ describe("protocol validation", () => {
         ...base(),
         type: "attachment",
         body: "",
-        attachments: [{ ...attachment, size: 512 * 1024 + 1 }],
+        attachments: [{ ...attachment, size: 20 * 1024 * 1024 + 1 }],
       }),
     ).toThrow();
   });

@@ -1,0 +1,71 @@
+name: DS01 CI
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DS01_RUNTIME_DIR: ${{ github.workspace }}/../DS01-runtime
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run evaluate
+      - run: npm run build:web
+      - run: npm audit --audit-level=high
+      - name: Real browser regression and load experiment
+        run: npm run test:browser
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      - name: Real local STUN TURN and media
+        run: npm run test:browser:advanced
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      - name: Encrypted account recovery across browser devices
+        run: npm run test:browser:accounts
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      - name: Three-peer group voice video and recovery
+        run: npm run test:browser:groups
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+      - name: Build application container
+        run: docker build --target app -f deploy/Dockerfile -t ds01-app:ci .
+      - name: Build web container
+        run: docker build --target web -f deploy/Dockerfile -t ds01-web:ci .
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        if: always()
+        with:
+          name: ds01-evaluation-${{ github.run_id }}
+          path: |
+            ../DS01-runtime/evaluation-*/*.json
+            ../DS01-runtime/browser-smoke-*/*.json
+            ../DS01-runtime/browser-smoke-*/*.png
+            ../DS01-runtime/browser-smoke-*/*.log
+            ../DS01-runtime/browser-advanced-*/advanced-results.json
+            ../DS01-runtime/browser-advanced-*/*.png
+            ../DS01-runtime/browser-advanced-*/*.log
+            ../DS01-runtime/browser-groups-*/group-call-results.json
+            ../DS01-runtime/browser-groups-*/*.png
+            ../DS01-runtime/browser-groups-*/*.log
+            ../DS01-runtime/browser-account-recovery-*/report.json
+            ../DS01-runtime/browser-account-recovery-*/*.png
+            ../DS01-runtime/browser-account-recovery-*/*.log
+          if-no-files-found: warn
+          retention-days: 14

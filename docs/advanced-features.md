@@ -2,21 +2,21 @@
 
 Mô tả cơ chế trong bản phát triển tích hợp. Bảng kết quả và phiên bản tham chiếu nằm ở [implementation-status.md](implementation-status.md).
 
-| Chức năng 5.11 | Thành phần chính | Cơ chế |
-|---|---|---|
-| Nhiều relay | PeerClient, relay | Pool tối đa bốn URL khác nhau |
-| Chọn relay | relaySelection | RTT EWMA + peer count + pending mail |
-| Tự failover | PeerClient | Disconnect/RPC timeout, thử relay khác |
-| Bầu super-peer | RelayCluster, journal | Owner Peer ID, endpoint, lease, merge ứng viên |
-| Replication | cluster, journal | HTTP xác thực, snapshot riêng, tombstone |
-| Store-and-forward | journal, MessageDelivery | TTL, queued, ACK người nhận |
-| E2EE | secure, keyDirectory | ECDH/HKDF/AES-GCM và identity pin |
-| DHT | overlayProtocol, cluster | Signed record, hash ring và owner replica |
-| Truyền file | FileTransfer | Chunk, ACK, SHA-256, IndexedDB |
-| STUN | DirectTransport | Binding và ICE candidate gathering |
-| WebRTC/TURN | DirectTransport, iceRoute | Selected candidate pair và route label |
-| Thoại/video | MediaSession, CallPanel | Nhận cuộc gọi, RTP, mute, hangup |
-| Load test | load-relay, browser-smoke | Concurrency, latency, throughput, đúng socket/envelope |
+| Chức năng 5.11    | Thành phần chính          | Cơ chế                                                 |
+| ----------------- | ------------------------- | ------------------------------------------------------ |
+| Nhiều relay       | PeerClient, relay         | Pool tối đa bốn URL khác nhau                          |
+| Chọn relay        | relaySelection            | RTT EWMA + peer count + pending mail                   |
+| Tự failover       | PeerClient                | Disconnect/RPC timeout, thử relay khác                 |
+| Bầu super-peer    | RelayCluster, journal     | Owner Peer ID, endpoint, lease, merge ứng viên         |
+| Replication       | cluster, journal          | HTTP xác thực, snapshot riêng, tombstone               |
+| Store-and-forward | journal, MessageDelivery  | TTL, queued, ACK người nhận                            |
+| E2EE              | secure, keyDirectory      | ECDH/HKDF/AES-GCM và identity pin                      |
+| DHT               | overlayProtocol, cluster  | Signed record, hash ring và owner replica              |
+| Truyền file       | FileTransfer              | Chunk, ACK, SHA-256, IndexedDB                         |
+| STUN              | DirectTransport           | Binding và ICE candidate gathering                     |
+| WebRTC/TURN       | DirectTransport, iceRoute | Selected candidate pair và route label                 |
+| Thoại/video       | MediaSession, CallPanel   | Nhận cuộc gọi, RTP, mute, hangup                       |
+| Load test         | load-relay, browser-smoke | Concurrency, latency, throughput, đúng socket/envelope |
 
 ## Chọn relay và failover
 

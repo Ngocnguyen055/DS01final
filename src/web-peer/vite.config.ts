@@ -1,2 +1,12 @@
 import { defineConfig } from "vite";
-export default defineConfig({ envDir: "../.." });
+import { fileURLToPath } from "node:url";
+
+export default defineConfig({
+  envDir: "../..",
+  resolve: {
+    alias: {
+      "@ds01/shared": fileURLToPath(new URL("../shared/index.ts", import.meta.url)),
+    },
+  },
+  optimizeDeps: { exclude: ["@ds01/shared"] },
+});

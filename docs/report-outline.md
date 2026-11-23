@@ -1,26 +1,9 @@
-# Dàn ý báo cáo DS01
+# Cấu trúc báo cáo DS01 P2P Chat
 
-1. Bài toán, yêu cầu và phạm vi demo web.
-2. Kiến trúc bốn phần: web peer, shared peer core, signaling và relay.
-3. Đăng ký Peer ID, discovery, heartbeat/timeout và xử lý trùng Peer ID.
-4. NAT, ICE, STUN, TURN; lý do chọn WebRTC DataChannel và relay Socket.IO.
-5. Phân biệt TURN với relay tầng ứng dụng của dự án.
-6. Envelope: Message ID, session, sequence, sender/receiver/group, mode, timestamp và ACK.
-7. DIRECT: thiết lập SDP/ICE qua signaling, DataChannel truyền payload, bằng chứng relay không chuyển tiếp.
-8. RELAY: ánh xạ Peer ID, xác thực sender, giới hạn kích thước, log chuyển tiếp và fallback.
-9. Chat nhóm multi-unicast, version thành viên và ACK riêng cho từng người nhận.
-10. Lưu localStorage, khôi phục peer, dedupe, retry giới hạn và trường hợp offline.
-11. Kiểm thử chức năng, đồng thời, lỗi/phục hồi, dữ liệu sai/bảo mật và hiệu năng.
-12. Kết quả thật kèm môi trường, thời gian, commit, ảnh/log/video.
-13. Giới hạn: không TURN, không giao offline, nhóm demo lưu RAM, không total order và chưa có failover nhiều server.
-14. Phân công ba thành viên, bài học và hướng mở rộng.
+Bản dùng chung ngày 20/11/2026. Nội dung chính nằm ở [report.md](report.md), cùng bản Word, HTML và PDF.
 
-## Phân công gợi ý cho ba sinh viên
+Thứ tự bám mục 10.2 của đề: bìa; thông tin nhóm/phân công; tóm tắt; bài toán; vấn đề phân tán; lựa chọn giải pháp; kiến trúc; thành phần/giao thức; định danh/discovery; đồng thời/nhất quán; chịu lỗi; bảo mật; triển khai; kiểm thử; hiệu năng; giới hạn; kết luận; tài liệu tham khảo; phụ lục.
 
-| Thành viên | Phần chính | Kiểm chứng chéo |
-| --- | --- | --- |
-| Sinh viên 1 | Protocol, PeerClient, ACK/retry/dedup | Review web peer và demo DIRECT |
-| Sinh viên 2 | Signaling, discovery, heartbeat, nhóm | Review relay và tình huống lỗi |
-| Sinh viên 3 | Relay, web peer, deploy, test/docs | Review protocol và benchmark |
+Phân công kỹ thuật: Hồng B1/B3/N8; Nam B2/B4/D1; Ngọc B5/B6. Tích hợp, nghiệm thu, báo cáo và demo là phần phối hợp cả ba thành viên.
 
-Điền tên và MSSV thật trước khi nộp. Mỗi thành viên cần hiểu toàn bộ luồng end-to-end.
+Khi cập nhật, giữ thống nhất report.md, report.docx, report.html và report.pdf. Mỗi số đo đi kèm ngày chạy, môi trường, phiên bản nguồn và phạm vi. Bảng nghiệm thu ghi kết quả của chính buổi thực hiện.

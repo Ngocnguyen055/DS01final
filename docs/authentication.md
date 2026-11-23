@@ -12,14 +12,14 @@ Một tài khoản có ràng buộc phiên online. Ở màn hình đăng nhập,
 
 ## Dữ liệu nằm ở đâu?
 
-| Dữ liệu | Vị trí |
-|---|---|
-| Tài khoản và hash phiên | Kho dữ liệu signaling |
-| Membership/identity registry | Snapshot signaling |
-| Journal/mailbox | Kho riêng của mỗi relay |
-| Lịch sử, receipt và contacts | localStorage theo tài khoản/origin |
-| File và khóa đang dùng | IndexedDB |
-| Bản sao tài khoản | Archive được mã hóa trước khi gửi lên server |
+| Dữ liệu                      | Vị trí                                       |
+| ---------------------------- | -------------------------------------------- |
+| Tài khoản và hash phiên      | Kho dữ liệu signaling                        |
+| Membership/identity registry | Snapshot signaling                           |
+| Journal/mailbox              | Kho riêng của mỗi relay                      |
+| Lịch sử, receipt và contacts | localStorage theo tài khoản/origin           |
+| File và khóa đang dùng       | IndexedDB                                    |
+| Bản sao tài khoản            | Archive được mã hóa trước khi gửi lên server |
 
 Launcher Node của bản tích hợp mặc định dùng DS01-runtime/data; DS01_DATA_DIR chỉ định nơi khác. Không lấy thư mục source, tài khoản browser và thư mục runtime làm ba nguồn tài khoản độc lập. Docker dùng volume theo cấu hình.
 
