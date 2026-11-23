@@ -1,0 +1,19 @@
+{
+  "scope": "Real headless Chrome on localhost, separate signaling/relay/web processes; not WAN/NAT evidence",
+  "checks": [],
+  "startedAt": "2026-11-18T20:32:23.088Z",
+  "sourceFingerprint": "c20e95e9796f130b8d948f42d473914b05af9dcd003bd457fe508d9b488d5a49",
+  "node": "v25.2.1",
+  "commit": "60867fedbd299f74098d35e0560c53e8c67cf820",
+  "workingTreeModified": true,
+  "passed": false,
+  "error": "Error: {\"exceptionId\":1,\"text\":\"Uncaught\",\"lineNumber\":0,\"columnNumber\":142,\"scriptId\":\"32\",\"stackTrace\":{\"callFrames\":[{\"functionName\":\"\",\"scriptId\":\"32\",\"url\":\"\",\"lineNumber\":0,\"columnNumber\":142}]},\"exception\":{\"type\":\"object\",\"subtype\":\"error\",\"className\":\"TypeError\",\"description\":\"TypeError: Cannot read properties of null (reading 'textContent')\\n    at <anonymous>:1:143\",\"objectId\":\"2626472686005672710.3.2\"}}",
+  "logs": {
+    "signal": "",
+    "primary": "",
+    "backup": "",
+    "web": "\n  VITE v7.3.7  ready in 501 ms\n\n  ➜  Local:   http://127.0.0.1:58042/\n",
+    "chrome": "\r\nDevTools listening on ws://127.0.0.1:58082/devtools/browser/c8555fb0-06ba-4c1d-ada3-bfa041b6a8e5\r\n"
+  },
+  "finishedAt": "2026-11-18T20:32:24.859Z"
+}

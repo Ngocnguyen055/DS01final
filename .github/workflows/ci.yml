@@ -14,14 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      DS01_RUNTIME_DIR: /tmp/ds01-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+      DS01_RUNTIME_DIR: ${{ github.workspace }}/../DS01-runtime
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -54,18 +54,18 @@ jobs:
         with:
           name: ds01-evaluation-${{ github.run_id }}
           path: |
-            ${{ env.DS01_RUNTIME_DIR }}/evaluation-*/*.json
-            ${{ env.DS01_RUNTIME_DIR }}/browser-smoke-*/*.json
-            ${{ env.DS01_RUNTIME_DIR }}/browser-smoke-*/*.png
-            ${{ env.DS01_RUNTIME_DIR }}/browser-smoke-*/*.log
-            ${{ env.DS01_RUNTIME_DIR }}/browser-advanced-*/advanced-results.json
-            ${{ env.DS01_RUNTIME_DIR }}/browser-advanced-*/*.png
-            ${{ env.DS01_RUNTIME_DIR }}/browser-advanced-*/*.log
-            ${{ env.DS01_RUNTIME_DIR }}/browser-groups-*/group-call-results.json
-            ${{ env.DS01_RUNTIME_DIR }}/browser-groups-*/*.png
-            ${{ env.DS01_RUNTIME_DIR }}/browser-groups-*/*.log
-            ${{ env.DS01_RUNTIME_DIR }}/browser-account-recovery-*/report.json
-            ${{ env.DS01_RUNTIME_DIR }}/browser-account-recovery-*/*.png
-            ${{ env.DS01_RUNTIME_DIR }}/browser-account-recovery-*/*.log
+            ../DS01-runtime/evaluation-*/*.json
+            ../DS01-runtime/browser-smoke-*/*.json
+            ../DS01-runtime/browser-smoke-*/*.png
+            ../DS01-runtime/browser-smoke-*/*.log
+            ../DS01-runtime/browser-advanced-*/advanced-results.json
+            ../DS01-runtime/browser-advanced-*/*.png
+            ../DS01-runtime/browser-advanced-*/*.log
+            ../DS01-runtime/browser-groups-*/group-call-results.json
+            ../DS01-runtime/browser-groups-*/*.png
+            ../DS01-runtime/browser-groups-*/*.log
+            ../DS01-runtime/browser-account-recovery-*/report.json
+            ../DS01-runtime/browser-account-recovery-*/*.png
+            ../DS01-runtime/browser-account-recovery-*/*.log
           if-no-files-found: warn
           retention-days: 14

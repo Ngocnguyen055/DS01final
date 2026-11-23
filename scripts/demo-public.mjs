@@ -232,26 +232,32 @@ async function main() {
     };
     child.stdout.on("data", capture);
     child.stderr.on("data", capture);
-    child.once("exit", (code, signal) => {
-      item.code = code;
-      if (persistent && !stopping && !item.expectedStop) {
-        item.error = new Error(`${name} stopped unexpectedly (${signal || code})`);
-        if (initialized) {
-          if (["relay", "backup", "tunnel-relay", "tunnel-backup"].includes(name))
-            console.warn(`${item.error.message}. Keeping signaling, web and the other relay running for failover.`);
-          else {
-            failure = item.error;
-            endSession();
-          }
-        }
-      }
-    });
     item.closed = new Promise((resolve) => {
       child.once("error", (error) => {
         item.error = error;
         resolve();
       });
-      child.once("close", resolve);
+      child.once("close", (code) => {
+        item.code = code;
+        if (persistent && !stopping && !item.expectedStop) {
+          item.error = new Error(`${name} stopped unexpectedly (${code})`);
+          if (initialized) {
+            if (
+              ["relay", "backup", "tunnel-relay", "tunnel-backup"].includes(
+                name,
+              )
+            )
+              console.warn(
+                `${item.error.message}. Keeping signaling, web and the other relay running for failover.`,
+              );
+            else {
+              failure = item.error;
+              endSession();
+            }
+          }
+        }
+        resolve();
+      });
     });
     return item;
   }
@@ -521,7 +527,7 @@ async function main() {
         .map((item) => ({
           name: item.name,
           pid: item.child.pid,
-          running: item.child.exitCode === null && item.child.signalCode === null && !item.error,
+          running: item.child.exitCode === null && !item.error,
         }))
         .concat({
           name: "web + dashboard",
@@ -670,7 +676,7 @@ async function main() {
     stopping = true;
     clearTimeout(startupDeadline);
     for (const item of children)
-      if (item.child.exitCode === null && item.child.signalCode === null) item.child.kill();
+      if (item.child.exitCode === null) item.child.kill();
     await Promise.all(
       children.map(async (item) => {
         let timer;

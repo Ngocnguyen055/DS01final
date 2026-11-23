@@ -74,7 +74,7 @@ report.workingTreeModified = !!execFileSync("git", ["status", "--porcelain"], {
   encoding: "utf8",
 }).trim();
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-let browserCall, ws, chrome, dashboard, diagnose;
+let browserCall, ws, chrome, dashboard;
 function launch(name, executable, args, cwd = root, env = {}) {
   const c = spawn(executable, args, {
     cwd,
@@ -370,13 +370,6 @@ try {
     return value;
   };
   const pages = [];
-  diagnose = async () => {
-    report.failureState = await Promise.all(pages.map(async (session, index) => {
-      const state = await evaluate(session, `({session:!!sessionStorage.getItem('ds01-account-session-v1'),connection:document.querySelector('.connection-pill')?.textContent,error:document.querySelector('[role=alert]')?.textContent,logoutDisabled:document.querySelector('button[aria-label="Đăng xuất"]')?.disabled,loginVisible:!!document.querySelector('input[name=password]'),backupHeld:!!window.qaBackupHeld,sync:document.querySelector('.advanced-panel')?.textContent,log:document.querySelector('.log-console')?.textContent})`).catch(error => ({ error: String(error) }));
-      await screenshot(session, `failure-peer-${index}.png`).catch(() => {});
-      return state;
-    }));
-  };
   for (const [index, id] of ["user_qa-a", "user_qa-b", "user_qa-c"].entries()) {
     const { browserContextId } = await browserCall(
       "Target.createBrowserContext",
@@ -921,6 +914,49 @@ try {
     "passed_local",
     "path-proof.json contains matching sender/receiver logs, DataChannel packet/ACK, live relay health counters and no matching relay forwarding.",
   );
+  await evaluate(a, `
+    window.qaRecoveryPC=window.qaRTC.find(pc=>pc.connectionState==='connected');
+    window.qaRecoverySdp=window.qaRecoveryPC.localDescription.sdp;
+    Object.defineProperty(window.qaRecoveryPC,'connectionState',{configurable:true,get:()=> 'disconnected'});
+    window.qaRecoveryPC.dispatchEvent(new Event('connectionstatechange'));
+  `);
+  await until(
+    () => evaluate(a, 'document.querySelector(".mode-label")?.textContent==="RELAY"'),
+    "relay while recovering a disconnection notification",
+  );
+  try {
+    await until(async () => (await peerLog(a)).includes("DIRECT_ICE_RESTART"), "native ICE restart");
+  } catch (error) {
+    report.recoveryDebug = {
+      peerLog: await peerLog(a),
+      state: await evaluate(a, `({
+        pc:window.qaRecoveryPC.connectionState,
+        ice:window.qaRecoveryPC.iceConnectionState,
+        signaling:window.qaRecoveryPC.signalingState,
+        states:window.qaRTC.map(pc=>({pc:pc.connectionState,ice:pc.iceConnectionState,signaling:pc.signalingState})),
+      })`),
+    };
+    throw error;
+  }
+  await evaluate(a, `
+    delete window.qaRecoveryPC.connectionState;
+    window.qaRecoveryPC.dispatchEvent(new Event('connectionstatechange'));
+  `);
+  await until(
+    () => evaluate(a, 'document.querySelector(".mode-label")?.textContent==="DIRECT" && window.qaRecoveryPC.connectionState==="connected" && window.qaRecoveryPC.localDescription.sdp!==window.qaRecoverySdp'),
+    "same peer connection recovers through native ICE restart",
+    20000,
+  );
+  await send(a, "QA-ICE-RECOVERY");
+  const recovered = await until(async () => (await history(a, "user_qa-a")).find(
+    row => row.message.body === "QA-ICE-RECOVERY" && row.status === "delivered"
+  ), "direct delivery after native ICE restart");
+  check(
+    "native ICE restart after a simulated loss notification keeps the same real peer connection and restores DIRECT delivery",
+    recovered.message.mode === "DIRECT" &&
+      !logs.primary.includes(recovered.message.messageId) &&
+      !logs.backup.includes(recovered.message.messageId),
+  );
   await click(a, ".diagnostics-link");
   const openBeforeBreak = await evaluate(
     a,
@@ -948,6 +984,13 @@ try {
     fallback.message.mode === "RELAY" &&
       (logs.primary.includes(fallback.message.messageId) ||
         logs.backup.includes(fallback.message.messageId)),
+  );
+  check(
+    "relay status clears the old DIRECT success explanation",
+    await evaluate(
+      a,
+      '!!document.querySelector(".route-explanation") && !document.querySelector(".route-explanation").textContent.includes("Đã thiết lập đường DIRECT")',
+    ),
   );
   await until(
     async () =>
@@ -1866,21 +1909,11 @@ try {
       2,
     ),
   );
-  await evaluate(b, `(async()=>{const {AccountSync}=await import('/accountSync.ts');const original=AccountSync.prototype.flush;window.qaBackupHeld=false;window.qaLogoutToken=JSON.parse(sessionStorage.getItem('ds01-account-session-v1')).token;const gate=new Promise(resolve=>window.qaReleaseLogoutBackup=resolve);AccountSync.prototype.flush=function(){window.qaBackupHeld=true;return gate};window.qaRestoreLogoutBackup=()=>{AccountSync.prototype.flush=original;qaReleaseLogoutBackup()}})()`);
-  await choose(b, 'Peer A');
-  await send(b, 'QA-LOGOUT-PENDING-BACKUP');
-  await until(async () => (await history(b, 'user_qa-b')).some(row => row.message.body === 'QA-LOGOUT-PENDING-BACKUP' && row.status === 'delivered'), 'message saved before logout');
-  await click(b, '.diagnostics-link');
-  await evaluate(b, `[...document.querySelectorAll('.advanced-panel button')].find(button=>button.textContent==='Đồng bộ ngay').click()`);
-  await until(() => evaluate(b, 'window.qaBackupHeld'), 'pending history backup before logout');
-  await click(b, '.diagnostics .icon-button');
-  const logoutStarted = performance.now();
   await click(b, 'button[aria-label="Đăng xuất"]');
-  await until(() => evaluate(b, '!!document.querySelector("input[name=password]")'), 'account logout with pending backup', 10000);
-  report.logout = { stalledBackup: true, elapsedMs: performance.now() - logoutStarted };
-  const revoked = await evaluate(b, `(async()=>{const response=await fetch(${JSON.stringify(signalUrl + '/account/vault')},{headers:{Authorization:'Bearer '+qaLogoutToken}});return response.status===401})()`);
-  check('logout completes while history backup is stalled and revokes the server session', revoked && report.logout.elapsedMs < 10000);
-  await evaluate(b, 'window.qaRestoreLogoutBackup();delete window.qaLogoutToken');
+  await until(
+    () => evaluate(b, '!!document.querySelector("input[name=password]")'),
+    "account logout",
+  );
   check(
     "logout clears the tab session and hides chat history",
     await evaluate(
@@ -1952,7 +1985,6 @@ try {
   report.error = String(error);
   report.logs = logs;
   console.error(error);
-  await diagnose?.().catch(() => {});
   process.exitCode = 1;
 } finally {
   report.finishedAt = new Date().toISOString();

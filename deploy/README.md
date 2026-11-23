@@ -1,117 +1,59 @@
-# Triển khai — DS01: P2P chat system simulating Skype
+# Triển khai thử nghiệm qua Internet
 
-Hiện nhóm demo bằng Node.js và Cloudflare Tunnel. Thư mục này chứa cấu hình cho hướng triển khai Docker, máy chủ public và CD. Các lệnh bên dưới chạy tại **thư mục gốc dự án**, trừ bước redeploy trên máy chủ.
+1. Cài Node.js 22.12+ (app cũng hỗ trợ 20.19+) và clone repository lên máy chủ.
+2. Chạy `npm run setup:env` để tạo `.env` với hai secret ngẫu nhiên riêng, sau đó cấu hình URL triển khai.
+3. Chạy `npm ci`, `npm run build:web`.
+4. Chạy signaling và relay thành hai process độc lập bằng systemd, PM2 hoặc hai terminal.
+5. Dùng Caddy theo `Caddyfile.example` để cấp HTTPS/WSS và phục vụ web tĩnh.
+6. Mở các cổng 80/443; không cần công khai trực tiếp cổng 4001/4002 khi đã reverse proxy.
 
-## 1. Chạy demo hiện tại
+Có thể dùng một máy chủ miễn phí hoặc tunnel HTTPS cho buổi thử. Tunnel cần tạo endpoint riêng cho signaling, relay và web. Repository không tự tạo tài khoản và không khẳng định đã triển khai công khai.
 
-Sau khi cài dependency và chuẩn bị `.env` theo [README chính](../README.md#4-cài-đặt-và-chạy-local):
+TURN tùy chọn qua `VITE_ICE_SERVERS`, xem [advanced-features.md](../docs/advanced-features.md) và mẫu coturn. Chưa có bằng chứng TURN public.
 
-```powershell
-npm.cmd run demo:local
-```
+## Chạy bằng Docker Compose
 
-Để các thiết bị khác mạng truy cập, cài [cloudflared](https://developers.cloudflare.com/tunnel/downloads/) rồi chạy:
-
-```powershell
-npm.cmd run demo:public
-```
-
-Gửi URL **Web** được in trong terminal cho các thiết bị. Máy vận hành phải giữ mạng và terminal hoạt động; Ctrl+C dừng phiên. Người tham gia không cần cài cloudflared. Chạy hai launcher riêng sẽ tạo hai hệ thống với tài khoản và dữ liệu riêng.
-
-## 2. Cấu hình đã có
-
-| File | Dùng để |
-| --- | --- |
-| [Dockerfile](Dockerfile) | Build image app và web |
-| [compose.yml](compose.yml) | Build từ mã nguồn và chạy signaling, hai relay, web |
-| [compose.images.yml](compose.images.yml) | Chạy image đã phát hành trên GHCR |
-| [internet.env.example](internet.env.example) | Tham khảo biến môi trường public |
-| [Caddyfile.example](Caddyfile.example) | HTTPS reverse proxy; mẫu web phục vụ file tĩnh |
-| [turnserver.conf.example](turnserver.conf.example) | Cấu hình coturn cho STUN/TURN |
-
-Docker đóng gói các dịch vụ. Địa chỉ public, domain và HTTPS vẫn cần được cấu hình trên máy chạy container.
-
-## 3. Thử Docker Compose
-
-Cần Docker Engine/Desktop, Compose v2 và `.env` có `JWT_SECRET`/`PEER_SECRET` ngẫu nhiên, khác nhau. Có thể dùng `.env` đã tạo bằng `npm.cmd run setup:env`.
+Tại root repo, tạo/chuẩn bị `.env` bằng `node scripts/init-env.mjs` (không in secret, giữ secret thật đã có). Sau đó:
 
 ```powershell
-docker compose --env-file .env -f deploy/compose.yml up --build -d --wait
-docker compose --env-file .env -f deploy/compose.yml ps
+docker compose --env-file .env -f deploy/compose.yml up --build -d
 docker compose --env-file .env -f deploy/compose.yml logs -f signaling relay relay-backup
 ```
 
-Mở `http://localhost:8080`. Các cổng host `4001`, `4002`, `4003` và `8080` được bind vào `127.0.0.1`, dùng cho truy cập trên máy host và reverse proxy.
+Mở `http://localhost:8080`: signaling 4001, relay 4002, backup 4003. Snapshot signaling nằm trong named volume, không xóa volume khi kiểm tra restart. Lệnh `down -v` xóa registry và quyền sở hữu ID, không dùng nó làm phép thử phục hồi.
 
-Signaling, relay chính và relay dự phòng có named volume riêng. Khi cập nhật mã nguồn, chạy lại lệnh `up --build -d --wait`. `docker compose down` giữ volume; thêm `-v` sẽ xóa dữ liệu trong volume.
+Build VITE_* với URL máy chủ mà browser truy cập được; localhost chỉ phù hợp cùng máy. Compose lab chưa tự cấu hình TLS/public DNS. Khi dùng web container phía sau Caddy host, block web có thể `reverse_proxy 127.0.0.1:8080` thay cho static root. Caddy reverse_proxy hỗ trợ WebSocket upgrade theo [tài liệu chính thức](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
 
-Docker dùng `/app/.data`; launcher Node mặc định dùng `../DS01-runtime/data/`. Khi chuyển dữ liệu vào container, dừng service cũ, sao lưu và chuyển cả registry lẫn `account-data/`. Nếu tên registry khác mặc định, bổ sung `ACCOUNT_STATE_PATH` vào `environment` của service signaling cho đúng đường dẫn trong container. Chỉ chạy một signaling writer trên một kho dữ liệu.
+Với cấu hình public, đặt NODE_ENV=production và secret ngẫu nhiên thật; server từ chối secret mẫu. Không trỏ hai signaling writer vào cùng state file. Mount/persist `.data` đúng quyền node; sao lưu registry trước khi thay đổi môi trường.
 
-## 4. Hướng triển khai trên máy chủ public
+Docker đặt `DS01_DATA_DIR=/app/.data`, `DS01_RUNTIME_DIR=/app/.runtime` và chạy bằng user `node`; named volume giữ tài khoản, khóa/vault, bản sao lịch sử có mã hóa và nhóm qua redeploy. Khác với Docker, launcher Node trên máy chủ mặc định dùng `../DS01-runtime/data/`. Khi chuyển từ chạy Node sang container, dừng signaling cũ rồi nhập kho dữ liệu vào volume; cấu hình `ACCOUNT_STATE_PATH` đúng tên registry đang dùng và giữ toàn bộ `account-data/`. Không khởi động hai writer trên cùng kho. Reverse proxy cho domain signaling phải chuyển tiếp cả `/account/*`, ngoài Socket.IO và `/health`.
 
-Chuẩn bị máy chủ Linux chạy Docker/Compose, domain và HTTPS. Có thể thuê VPS hoặc dùng máy chủ được cấp. Hai relay trên cùng host chỉ bảo vệ khi một service lỗi; để chịu lỗi host cần tách máy chủ.
+Docker chưa được chạy trong môi trường kiểm tra này; cần tự build/run và lưu log trước khi đánh dấu nghiệm thu Docker/WAN đạt.
 
-Đặt các URL public trong `.env`, dùng [internet.env.example](internet.env.example) làm mẫu:
+## Cluster và triển khai lại
 
-```dotenv
-VITE_SIGNAL_URL=https://signal.example.org
-VITE_RELAY_URL=https://relay.example.org
-VITE_RELAY_URLS=https://relay-backup.example.org
-PUBLIC_RELAY_URL=https://relay.example.org
-PUBLIC_RELAY_BACKUP_URL=https://relay-backup.example.org
-```
+Compose hiện lưu signaling, relay chính và relay dự phòng trên ba named volume độc lập. Relay gửi dữ liệu replica qua HTTP HMAC có nonce và timestamp, không chia sẻ volume. `RELAY_CLUSTER_URLS` chứa URL canonical mà browser sử dụng; `RELAY_CLUSTER_ROUTES` chỉ ánh xạ các URL đó sang địa chỉ nội bộ khi trao đổi server-server. Hai relay phải cấu hình cùng tập URL để hash ring DHT nhất quán. HTTPS reverse proxy và secret vẫn cần được cấu hình trước khi công khai.
 
-Thay domain ví dụ bằng domain thật. Không dùng secret mẫu. Các biến `VITE_*` được đưa vào web khi build; đổi URL hoặc ICE cần build lại web.
+Với hai máy chủ thật, thay `relay`/`relay-backup` trong routes bằng địa chỉ mạng nội bộ hoặc bỏ routes để dùng URL HTTPS public. Không dùng chung file `.data/relay.json` giữa hai process. Giữ state và khóa đăng nhập khi redeploy. Cluster sao chép bất đồng bộ nên có cửa sổ mất dữ liệu giữa ghi local và replication; hai relay trên cùng host không bảo vệ khi cả host hỏng.
 
-Cấu hình Caddy trên host theo [Caddyfile.example](Caddyfile.example), cho phép truy cập cổng 80/443. Khi dùng web container, thay block web phục vụ file tĩnh bằng:
+Để redeploy từ mã nguồn, giữ nguyên `.env`/volumes, cập nhật checkout đã được nhóm duyệt rồi chạy lại `docker compose --env-file .env -f deploy/compose.yml up --build -d --wait`. Sao lưu state trước khi đổi phiên bản có thay đổi schema. Không xóa volume để thử recovery.
 
-```caddyfile
-peer.example.org {
-  reverse_proxy 127.0.0.1:8080
-}
-```
+Để ứng cử super-peer, đặt `SUPER_PEER_ID=user_<username>` cho relay chính hoặc `SUPER_PEER_BACKUP_ID` cho relay dự phòng, dùng đúng Peer ID hiện trên giao diện. Relay đồng hành phải có URL HTTPS public nằm trong cluster; người dùng đó đăng nhập rồi nhập URL ở `Kết nối nâng cao` và bấm ứng cử. Kiểm tra `ELECTION_CANDIDATE`, `ELECTION_RESULT` và peer-to-connection mapping trong `/health`/log. `ALLOW_LOCAL_SUPERPEERS=1` chỉ cho lab local, không chứng minh public reachability. Election dựa lease và hội tụ sau replica merge, có thể có leader tạm khác nhau khi phân vùng.
 
-Giữ các block signaling/relay trỏ đến `4001`/`4002`/`4003`. Domain signaling phải chuyển tiếp cả Socket.IO, `/account/*` và `/health`; tham khảo [reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy). Sau khi chạy Compose, mở domain web từ các mạng khác nhau để kiểm tra discovery, chat, file và cuộc gọi. Khi các endpoint HTTPS đã public, dùng domain máy chủ thay cho `demo:public`.
+## TURN và media
 
-Hai relay phải dùng cùng tập URL canonical trong `RELAY_CLUSTER_URLS`. `RELAY_CLUSTER_ROUTES` ánh xạ chúng sang địa chỉ nội bộ để trao đổi replica; khi tách sang hai host, sửa routes theo địa chỉ thực tế. Mỗi relay giữ state riêng, replication đi qua HTTP có HMAC/nonce.
+Coturn chạy độc lập với application relay. Cấu hình `turnserver.conf.example`, thay realm/credentials, đặt external IP đúng nếu server ở sau NAT, giới hạn cổng UDP relay theo firewall thực tế và giới hạn quota người dùng. Cấu hình browser bằng `VITE_ICE_SERVERS`, ví dụ JSON có `stun:` và `turn:turn.example.org:3478?transport=udp` hoặc `turns:` khi đã cấu hình chứng chỉ. Mẫu cấu hình là lab với thông tin đăng nhập dùng cho một buổi demo; mọi `VITE_*` xuất hiện trong bundle browser, không đặt secret máy chủ hoặc khóa ký vào đó. TURN credentials dài hạn công khai có thể bị lạm dụng; dùng tài khoản ngắn hạn/quota khi triển khai thật. `demo:public` đọc cấu hình ICE và owner Peer ID từ `.env` hoặc biến môi trường, đồng thời tự tạo URL/secret riêng cho phiên.
 
-## 5. Hướng triển khai bằng CD
+Để có bằng chứng TURN, kiểm tra candidate-pair được chọn có candidate type `relay`, nhận được chat/media và đối chiếu bộ đếm application relay. `npm run test:browser:advanced` kiểm tra giao thức STUN/TURN và RTP thật trên loopback bằng process TURN lab riêng. Kết quả này không thay thế demo hai mạng Internet/NAT. Lab không tự mở firewall, cài Docker hay khẳng định có TURN public.
 
-[DS01 CI](../.github/workflows/ci.yml) tự chạy khi push/PR. [DS01 manual delivery](../.github/workflows/delivery.yml) là workflow phát hành và triển khai thủ công; cần chuẩn bị máy chủ ở mục 4 trước khi bật deploy.
+## Bật GitHub Actions
 
-Cấu hình trên GitHub:
+1. Nhóm tự commit/push các file đã kiểm tra. Workflow `DS01 CI` tự chạy trên push/PR; mở **Actions** để xem từng bước và tải Artifacts.
+2. Vào **Settings → Secrets and variables → Actions → Variables**, đặt `VITE_SIGNAL_URL`, `VITE_RELAY_URL`, `VITE_RELAY_URLS` thành URL HTTPS thật cho bản web phát hành. Các URL phải khớp `PUBLIC_RELAY_URL` và `PUBLIC_RELAY_BACKUP_URL` của server.
+3. Vào **Settings → Environments**, tạo `production`, cấu hình người duyệt nếu gói GitHub hỗ trợ. Thêm secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`; variable `DEPLOY_PATH`, ví dụ `/opt/ds01`. Known-hosts phải lấy fingerprint qua kênh tin cậy; workflow không dùng `StrictHostKeyChecking=no`.
+4. Trên server Linux đã có Docker Engine và Compose plugin, chuẩn bị thư mục deploy và `.env` với secret ngẫu nhiên, URL production đúng và quyền truy cập chỉ dành cho tài khoản vận hành. Khi GHCR private, đăng nhập registry trên server bằng token chỉ có quyền đọc package. Cấu hình Caddy HTTPS theo mẫu; repository không tự đăng ký domain hoặc cấp máy chủ.
+5. Mở **Actions → DS01 manual delivery → Run workflow** ở revision muốn phát hành. CI phải qua toàn bộ mới publish image. Để thử registry trước, giữ `deploy=false`. Khi server đã chuẩn bị, chọn `deploy=true`; environment gate được áp dụng trước bước SSH.
 
-| Nơi cấu hình | Giá trị |
-| --- | --- |
-| Repository → Settings → Secrets and variables → Actions → Variables | `VITE_SIGNAL_URL`, `VITE_RELAY_URL`, `VITE_RELAY_URLS`; tùy chọn `VITE_ICE_SERVERS` |
-| Environment `production` → Variables | `DEPLOY_PATH`, ví dụ `/opt/ds01` |
-| Environment `production` → Secrets | `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS` |
+Workflow publish app/web với tag `sha-<commit>`, gửi `compose.images.yml` và script redeploy đến server, pull image, chạy `up --wait` và kiểm tra health. Script chỉ cập nhật `current-release.env` sau khi thành công; nếu update lỗi, phục hồi image trong file đó. Nếu lần deploy đầu chưa có release trước thì cần xử lý lỗi từ log. Rollback image không đảo ngược dữ liệu hay migration; luôn sao lưu state trước thay đổi schema. Có thể redeploy một revision đã publish bằng `bash deploy-remote.sh ghcr.io/<owner>/<repo> <commit-sha>` trong thư mục server.
 
-Máy chủ cần thư mục deploy đã tồn tại, `.env` với cấu hình thật và quyền tải image từ GHCR. Nếu image private, đăng nhập registry trên máy chủ bằng token có quyền đọc package. `DEPLOY_KNOWN_HOSTS` chứa host key đã đối chiếu của máy chủ SSH.
-
-Mở **Actions → DS01 manual delivery → Run workflow**:
-
-| Tùy chọn | Các bước chạy |
-| --- | --- |
-| `deploy=false` | Chạy CI, build và đẩy image app/web lên GHCR với tag `sha-<commit>` |
-| `deploy=true` | Thực hiện các bước trên, gửi Compose/script đến máy chủ, pull image và chạy container |
-
-Workflow dùng [deploy-remote.sh](../scripts/deploy-remote.sh), chờ health rồi mới cập nhật `current-release.env`. Nếu cập nhật lỗi và có release trước, script chạy lại image của release đó. Rollback image không khôi phục dữ liệu/schema; sao lưu state trước khi đổi schema.
-
-Để triển khai lại một revision đã phát hành, đặt `COMMIT_SHA` là SHA đầy đủ 40 ký tự của revision đó rồi chạy trong thư mục deploy trên server:
-
-```bash
-bash deploy-remote.sh ghcr.io/ngocnguyen055/ds01 "$COMMIT_SHA"
-```
-
-Workflow không cài Caddy, tạo domain hoặc cấp máy chủ. Các phần này được chuẩn bị trước khi chạy deploy.
-
-## 6. TURN và super-peer
-
-Coturn chạy riêng với application relay. Thay realm, credentials và cấu hình firewall theo [turnserver.conf.example](turnserver.conf.example); cấu hình external IP nếu máy chủ ở sau NAT. Mẫu hiện tắt TLS/DTLS, nên chỉ dùng `turn:`; muốn dùng `turns:` cần cấu hình chứng chỉ và listener tương ứng.
-
-Đặt JSON STUN/TURN trong `VITE_ICE_SERVERS`. Các biến `VITE_*` hiển thị trong trình duyệt; không đặt secret ký của máy chủ vào đó. Với TURN public, dùng credential có thời hạn và quota. Xem candidate được chọn và nhãn DIRECT/TURN/RELAY để phân biệt đường truyền; Cloudflare Tunnel không thay thế TURN.
-
-Để ứng cử super-peer, chạy relay đồng hành HTTPS public trong cluster, đặt `SUPER_PEER_ID` hoặc `SUPER_PEER_BACKUP_ID` trùng Peer ID của tài khoản. Đăng nhập, nhập URL tại **Kết nối nâng cao** và ứng cử. Theo dõi `ELECTION_CANDIDATE`, `ELECTION_RESULT` và lease trong log. `ALLOW_LOCAL_SUPERPEERS=1` chỉ dùng cho lab local.
-
-Chi tiết: [advanced-features.md](../docs/advanced-features.md).
+Pipeline cấu hình được kiểm tra YAML tại local; build/run Docker và SSH deployment chưa được chạy trên máy hiện tại vì chưa có Docker/server public. Không ghi kết quả CI/CD “đã triển khai” trước khi nhóm tự push và có Actions run thành công.

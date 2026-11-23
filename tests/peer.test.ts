@@ -243,7 +243,7 @@ describe("peer delivery across real Socket.IO processes", () => {
     const token = (await import("jsonwebtoken")).default.sign(
       { sub: "peer-a" },
       process.env.PEER_SECRET || "local-development-only-secret",
-      { expiresIn: '1h', audience: 'ds01-relay', issuer: 'ds01-signaling' },
+      { expiresIn: "1h", audience: "ds01-relay", issuer: "ds01-signaling" },
     );
     const { io } = await import("socket.io-client");
     const socket = io(relayUrl, { auth: { token } });

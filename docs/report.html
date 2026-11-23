@@ -1,0 +1,1107 @@
+<!doctype html>
+<html lang="vi">
+  <meta charset="UTF-8" /><title>DS01 P2P Chat — Báo cáo kỹ thuật dự thảo</title
+  ><style>
+    @page {
+      size: A4;
+      margin: 18mm 17mm;
+    }
+    body {
+      font:
+        11pt/1.7 "Segoe UI",
+        Arial,
+        sans-serif;
+      color: #263b31;
+      max-width: 190mm;
+      margin: auto;
+    }
+    h1 {
+      font-size: 27pt;
+      line-height: 1.3;
+      color: #246b50;
+      border-bottom: 3px solid #719b77;
+      padding-bottom: 18px;
+      margin-top: 30px;
+    }
+    h2 {
+      font-size: 17pt;
+      line-height: 1.4;
+      margin-top: 28px;
+      border-bottom: 1px solid #d8e4d5;
+      padding-bottom: 9px;
+      break-after: avoid;
+    }
+    h3 {
+      font-size: 13pt;
+      break-after: avoid;
+    }
+    p {
+      text-align: justify;
+      margin: 11px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9pt;
+      margin: 15px 0;
+    }
+    th,
+    td {
+      border: 1px solid #d6e0d1;
+      padding: 7px;
+      vertical-align: top;
+      overflow-wrap: anywhere;
+    }
+    th {
+      background: #edf3e8;
+      text-align: left;
+    }
+    tr {
+      break-inside: avoid;
+    }
+    a {
+      color: #276b50;
+    }
+    code,
+    pre {
+      font-family: Consolas, monospace;
+      font-size: 9pt;
+      overflow-wrap: anywhere;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: #eff3eb;
+      padding: 14px;
+      border-radius: 6px;
+    }
+    figure {
+      margin: 20px 0;
+      break-inside: avoid;
+    }
+    img {
+      max-width: 100%;
+      max-height: 130mm;
+      object-fit: contain;
+      border: 1px solid #dce4d8;
+    }
+    figcaption {
+      font-size: 9pt;
+      color: #718568;
+      text-align: center;
+    }
+    li {
+      margin-bottom: 7px;
+    }
+  </style>
+  <body>
+    <h1>DS01 P2P Chat</h1>
+    <p><strong>BÁO CÁO BÀI TẬP LỚN — HỌC PHẦN HỆ THỐNG PHÂN TÁN</strong></p>
+    <p>Đề tài DS01: Xây dựng hệ thống chat P2P mô phỏng Skype.</p>
+    <p>Phiên bản tài liệu dùng chung ngày 20/11/2026.</p>
+    <table>
+      <tr>
+        <th>Thông tin</th>
+        <th>Nội dung</th>
+      </tr>
+      <tr>
+        <td>Cơ sở đào tạo, khoa, lớp</td>
+        <td>Nhóm điền trước khi nộp</td>
+      </tr>
+      <tr>
+        <td>Giảng viên hướng dẫn</td>
+        <td>Nhóm điền trước khi nộp</td>
+      </tr>
+      <tr>
+        <td>Mã nhóm</td>
+        <td>Nhóm điền trước khi nộp</td>
+      </tr>
+      <tr>
+        <td>Thành viên</td>
+        <td>Nam, Hồng, Ngọc — bổ sung họ tên đầy đủ và MSSV</td>
+      </tr>
+      <tr>
+        <td>Repository</td>
+        <td>https://github.com/Ngocnguyen055/DS01</td>
+      </tr>
+      <tr>
+        <td>Commit B2/B4 tham chiếu</td>
+        <td>
+          8677e28 — Implement B2 WebRTC connectivity and B4 reliable messaging
+        </td>
+      </tr>
+    </table>
+    <h2>1. Thông tin nhóm và phân công</h2>
+    <p>
+      Báo cáo là sản phẩm chung của ba thành viên. Bảng dưới xác định trách
+      nhiệm theo bảng phân công của nhóm; lịch sử commit và bằng chứng thực hiện
+      được dùng để đối chiếu đóng góp.
+    </p>
+    <table>
+      <tr>
+        <th>Thành viên</th>
+        <th>Nhiệm vụ</th>
+        <th>Nội dung chính</th>
+      </tr>
+      <tr>
+        <td>Hồng</td>
+        <td>B1, B3, N8</td>
+        <td>
+          Signaling, discovery, xác thực; relay ứng dụng; thử tải và phân tích
+          số liệu
+        </td>
+      </tr>
+      <tr>
+        <td>Nam</td>
+        <td>B2, B4, D1</td>
+        <td>
+          WebRTC, STUN/TURN và chuyển đường; giao thức,
+          ACK/retry/dedup/ordering; cấu hình CI/CD
+        </td>
+      </tr>
+      <tr>
+        <td>Ngọc</td>
+        <td>B5, B6</td>
+        <td>Chat nhóm, nhất quán thành viên; web peer và lịch sử cục bộ</td>
+      </tr>
+      <tr>
+        <td>Cả nhóm</td>
+        <td>Nghiệm thu chung</td>
+        <td>
+          Tích hợp, ba peer, đồng thời, lỗi/phục hồi, báo cáo và thuyết trình
+        </td>
+      </tr>
+    </table>
+    <p>
+      Các đầu việc nâng cao có phần giao nhau giữa các thành phần. Nhóm chốt
+      người thực hiện theo công việc thực tế; không coi toàn bộ một thư mục là
+      đóng góp riêng của người đầu tiên push thư mục đó.
+    </p>
+    <h2>2. Tóm tắt</h2>
+    <p>
+      DS01 P2P Chat là nguyên mẫu chat phân tán gồm web peer,
+      bootstrap/signaling và application relay độc lập. Mỗi peer vừa khởi tạo
+      vừa tiếp nhận kết nối. Signaling hỗ trợ định danh, discovery và SDP/ICE;
+      chat body đi qua WebRTC DataChannel hoặc application relay riêng.
+    </p>
+    <p>
+      Hệ thống ưu tiên WebRTC khi kết nối phù hợp. Nếu không thiết lập được, kết
+      nối lỗi hoặc thiếu ACK ứng dụng, peer sử dụng relay qua kết nối Socket.IO
+      outbound. Giao diện hiển thị DIRECT, TURN hoặc RELAY và mức xác nhận của
+      tin.
+    </p>
+    <p>
+      Các cơ chế chính gồm Message ID/Session ID, sequence, logical time, ACK
+      sau lưu trữ, retry hữu hạn, dedup, membership version và khôi phục sau
+      restart. Phần mở rộng có nhiều relay, chọn relay, mailbox offline,
+      replication, E2EE, DHT, truyền file và thoại/video ở mức nguyên mẫu.
+    </p>
+    <p>
+      Báo cáo mô tả bản phát triển tích hợp tại thư mục dự án và đối chiếu riêng
+      B2/B4 trong commit 8677e28. Kết quả được ghi theo phiên bản nguồn và môi
+      trường chạy. Khi chốt phiên bản nhóm, mã nguồn, dependency, cấu hình và
+      tài liệu cần được hợp nhất cùng nhau.
+    </p>
+    <h2>3. Bài toán và yêu cầu</h2>
+    <p>
+      Hai thiết bị có thể nằm sau NAT, có IP riêng hoặc bị firewall giới hạn kết
+      nối vào. Peer không thể chỉ lấy IP riêng của peer khác rồi mặc định mở kết
+      nối thành công. Ngoài chọn đường truyền, ứng dụng cần phân biệt kết nối đã
+      mở, gói đã chuyển và dữ liệu đã lưu ở người nhận.
+    </p>
+    <table>
+      <tr>
+        <th>Mục trong đề</th>
+        <th>Nội dung triển khai</th>
+      </tr>
+      <tr>
+        <td>4.1–4.2</td>
+        <td>
+          Process độc lập, danh tính node, giao tiếp mạng, log và giao thức
+        </td>
+      </tr>
+      <tr>
+        <td>4.3</td>
+        <td>Tình huống đồng thời, OCC, version và mô hình nhất quán</td>
+      </tr>
+      <tr>
+        <td>4.4</td>
+        <td>Timeout, bounded retry, ACK, lease, reconnect và failover</td>
+      </tr>
+      <tr>
+        <td>4.5</td>
+        <td>Xác thực, phân quyền, validation, giới hạn dữ liệu, secret</td>
+      </tr>
+      <tr>
+        <td>5.1–5.5</td>
+        <td>Discovery, WebRTC, NAT traversal, relay và chat hai chiều</td>
+      </tr>
+      <tr>
+        <td>5.6–5.9</td>
+        <td>Nhóm, envelope, reliable delivery và relay routing</td>
+      </tr>
+      <tr>
+        <td>5.10</td>
+        <td>Ba peer, log chứng minh tuyến, đồng thời và phục hồi</td>
+      </tr>
+      <tr>
+        <td>5.11</td>
+        <td>Các chức năng mở rộng, được giải thích riêng</td>
+      </tr>
+      <tr>
+        <td>9–11</td>
+        <td>Test, hiệu năng, repository, báo cáo và trình diễn</td>
+      </tr>
+    </table>
+    <p>
+      Nguồn yêu cầu là COURSE PROJECT SPECIFICATION.pdf, trang 2–9 và 14–17. Các
+      yêu cầu riêng DS02/DS03/DS04 không được tính thành yêu cầu bắt buộc của
+      DS01.
+    </p>
+    <h2>4. Những vấn đề hệ thống phân tán</h2>
+    <table>
+      <tr>
+        <th>Vấn đề</th>
+        <th>Rủi ro</th>
+        <th>Cơ chế</th>
+      </tr>
+      <tr>
+        <td>Định danh</td>
+        <td>Hai phiên dùng cùng Peer ID</td>
+        <td>Ràng buộc danh tính và phiên</td>
+      </tr>
+      <tr>
+        <td>Discovery</td>
+        <td>Trạng thái online cũ</td>
+        <td>Heartbeat, lease, loại phiên hết hạn</td>
+      </tr>
+      <tr>
+        <td>NAT/firewall</td>
+        <td>Không nhận kết nối vào</td>
+        <td>ICE/STUN, TURN, application relay</td>
+      </tr>
+      <tr>
+        <td>Giao tin</td>
+        <td>Mất ACK, trùng bản nhận</td>
+        <td>ID bất biến, ACK và dedup</td>
+      </tr>
+      <tr>
+        <td>Ordering</td>
+        <td>Đến muộn, đồng hồ vật lý lùi</td>
+        <td>Sender/session sequence và logical time</td>
+      </tr>
+      <tr>
+        <td>Membership</td>
+        <td>Hai sửa đổi ghi đè nhau</td>
+        <td>Version và optimistic concurrency</td>
+      </tr>
+      <tr>
+        <td>Khả dụng</td>
+        <td>Relay dừng hoặc không phản hồi</td>
+        <td>Timeout, reconnect, relay dự phòng</td>
+      </tr>
+      <tr>
+        <td>Persistence</td>
+        <td>Process dừng khi ghi state</td>
+        <td>Atomic snapshot và kiểm tra schema</td>
+      </tr>
+      <tr>
+        <td>Replication</td>
+        <td>Write/delete đến khác thứ tự</td>
+        <td>Clock, origin, merge và tombstone</td>
+      </tr>
+    </table>
+    <p>
+      Các Map/biến trong process chỉ quản lý state nội bộ. Peer trao đổi qua
+      mạng; không dùng shared file hoặc shared memory thay cho giao thức. Các
+      relay có kho riêng và trao đổi replica bằng HTTP.
+    </p>
+    <h2>5. Phân tích và lựa chọn giải pháp</h2>
+    <p>
+      Nhóm dùng TypeScript, Node.js, React/Vite, Socket.IO và WebRTC. Socket.IO
+      cung cấp kênh sự kiện với kết nối outbound; DataChannel cung cấp kênh peer
+      hai chiều. Nhóm bổ sung logic giao tin, quyền truy cập, retry, ordering và
+      phục hồi ở tầng ứng dụng.
+    </p>
+    <p>
+      So với chỉ có một chat server, thiết kế cho phép payload đi trực tiếp khi
+      điều kiện phù hợp. So với chỉ dùng WebRTC, application relay cung cấp
+      tuyến dự phòng qua endpoint truy cập được mà không yêu cầu mỗi user mở
+      cổng.
+    </p>
+    <table>
+      <tr>
+        <th>Mode</th>
+        <th>Đường dữ liệu</th>
+        <th>Bằng chứng</th>
+      </tr>
+      <tr>
+        <td>DIRECT</td>
+        <td>DataChannel, cặp ICE không dùng TURN</td>
+        <td>Selected candidate pair và log peer</td>
+      </tr>
+      <tr>
+        <td>TURN</td>
+        <td>DataChannel qua candidate loại relay</td>
+        <td>Selected candidate pair có relay candidate</td>
+      </tr>
+      <tr>
+        <td>RELAY</td>
+        <td>Envelope qua Socket.IO application relay</td>
+        <td>relay:send và FORWARD cùng Message ID</td>
+      </tr>
+    </table>
+    <p>
+      STUN hỗ trợ lấy địa chỉ phản xạ và thử NAT traversal, không bảo đảm mọi
+      NAT cho kết nối trực tiếp. TURN chuyển lưu lượng WebRTC; application relay
+      chuyển envelope của ứng dụng. Chỉ cấu hình ICE server chưa đủ để kết luận
+      đường được chọn là TURN.
+    </p>
+    <p>
+      Cơ sở giao thức được tham khảo từ RFC 8445, RFC 8489, RFC 8656, RFC 8831
+      và tài liệu Socket.IO.
+    </p>
+    <h2>6. Kiến trúc hệ thống</h2>
+    <figure>
+      <img src="architecture.png" />
+      <figcaption>Các thành phần và đường truyền của DS01</figcaption>
+    </figure>
+    <p>
+      Signaling, từng relay và web server có process, cổng và lifecycle riêng.
+      Browser tạo các peer với phiên và storage tách biệt. Những thành phần này
+      có thể cùng host hoặc đặt trên các máy chủ khác nhau.
+    </p>
+    <table>
+      <tr>
+        <th>Thành phần</th>
+        <th>Trách nhiệm</th>
+      </tr>
+      <tr>
+        <td>Signaling</td>
+        <td>
+          Tài khoản/phiên, discovery, lease, SDP/ICE, nhóm và key directory
+        </td>
+      </tr>
+      <tr>
+        <td>Application relay</td>
+        <td>Peer ID → socket, validation, forwarding, mailbox</td>
+      </tr>
+      <tr>
+        <td>Relay dự phòng</td>
+        <td>Tuyến dự phòng, journal replica và discovery overlay</td>
+      </tr>
+      <tr>
+        <td>Web peer</td>
+        <td>Chọn đường, gửi/nhận, ACK/retry, lịch sử và hiển thị</td>
+      </tr>
+      <tr>
+        <td>Web server</td>
+        <td>Phục vụ giao diện tĩnh hoặc dev server</td>
+      </tr>
+      <tr>
+        <td>TURN</td>
+        <td>Allocation và chuyển tiếp lưu lượng WebRTC</td>
+      </tr>
+    </table>
+    <p>
+      Signaling/relay dùng Socket.IO qua HTTP long-polling hoặc WebSocket;
+      endpoint công khai dùng HTTPS/WSS khi có TLS. DataChannel dùng ngăn xếp
+      WebRTC, không phải một HTTP request cho từng tin.
+    </p>
+    <p>
+      Signaling không chuyển chat body giữa hai peer. API kiểm tra quyền chỉ
+      dùng thông tin cần cho quyền truy cập. Kho đồng bộ tài khoản nhận bản sao
+      đã mã hóa; chức năng lưu đó tách biệt với đường giao tin.
+    </p>
+    <h2>7. Thiết kế thành phần và giao thức</h2>
+    <p>
+      PeerClient phối hợp DirectTransport, MessageDelivery, FileTransfer và
+      ChatStore. DirectTransport quản lý kết nối; MessageDelivery quản lý sự
+      kiện/ACK; ChatStore là ranh giới persistence.
+    </p>
+    <p>Ví dụ một envelope:</p>
+    <pre>
+{
+  &quot;messageId&quot;: &quot;f5515419-f620-4823-a416-560033e3e0bf&quot;,
+  &quot;sessionId&quot;: &quot;9110ba98-e1b4-4936-9a9b-1cb2daa63dc9&quot;,
+  &quot;senderId&quot;: &quot;peer-a&quot;,
+  &quot;receiverId&quot;: &quot;peer-b&quot;,
+  &quot;groupId&quot;: null,
+  &quot;type&quot;: &quot;text&quot;,
+  &quot;timestamp&quot;: 1795180000000,
+  &quot;logicalTime&quot;: 1795180000001,
+  &quot;body&quot;: &quot;Xin chào&quot;,
+  &quot;mode&quot;: &quot;DIRECT&quot;,
+  &quot;ackRequested&quot;: true,
+  &quot;attempt&quot;: 1,
+  &quot;sequence&quot;: 1
+}</pre>
+    <p>
+      Message ID nhận diện một sự kiện. Session ID và sequence xác định chuỗi
+      hội thoại. Retry giữ ID, nội dung và ordering metadata; mode/attempt được
+      phép đổi. Fan-out nhóm tạo envelope riêng từng receiver, cùng sự kiện
+      logic.
+    </p>
+    <p>
+      ACK có Message ID riêng, ackFor trỏ tới tin gốc và ackRequested=false.
+      Receiver ACK sau khi chấp nhận lưu; sender kiểm tra ackFor, session,
+      sender/receiver, group và sequence. RPC ACK của relay không thay ACK ứng
+      dụng.
+    </p>
+    <p>
+      Text giới hạn 4000 ký tự; plaintext envelope tối đa 8192 byte UTF-8 sau
+      chuẩn hóa. File cá nhân tối đa 512 KiB; attachment envelope tối đa ba
+      metadata. E2EE dùng envelope ngoài giới hạn 16384 byte và giữ các trường
+      cần cho routing.
+    </p>
+    <h2>8. Định danh và khám phá peer</h2>
+    <p>
+      Luồng tài khoản dùng Peer ID ổn định user_&lt;username&gt;. Luồng thử
+      nghiệm kỹ thuật dùng Peer ID/proof riêng. Luồng DHT nâng cao tạo định danh
+      gắn với khóa ký.
+    </p>
+    <p>
+      Bản tích hợp đăng ký Peer ID, display name, status và connectivity
+      metadata. Signaling kiểm tra proof, phiên và xung đột ID trước khi cấp
+      token relay. List/lookup không trả token hoặc socket nội bộ của peer khác.
+    </p>
+    <p>
+      Heartbeat mặc định 10 giây; lease mặc định 30 giây và có vòng quét.
+      Disconnect, hết hạn hoặc thu hồi phiên làm cập nhật registry online và
+      presence. Connection mapping được tái tạo khi kết nối lại; registry danh
+      tính được giữ bền vững.
+    </p>
+    <p>
+      Ở thiết bị mới, dữ liệu phụ thuộc hai lớp: storage tại browser và bản sao
+      tài khoản đã mã hóa. Luồng chuyển thiết bị xác nhận tiếp quản phiên, khôi
+      phục kho mã hóa và giữ Peer ID. Những dữ liệu chỉ còn ở thiết bị cũ không
+      tự xuất hiện nếu chưa có bản sao phù hợp.
+    </p>
+    <h2>9. Đồng thời, đồng bộ và nhất quán</h2>
+    <p>
+      Hai peer gửi gần đồng thời được quản lý bằng Message ID độc lập và pending
+      ACK theo message/receiver. Tin dữ liệu nhận được tuần tự hóa ở ranh giới
+      lưu; ACK xử lý riêng để một thao tác lưu chậm không chặn xác nhận của lần
+      gửi khác.
+    </p>
+    <p>
+      Hai sửa đổi nhóm cùng version được xử lý bằng OCC. Signaling kiểm tra
+      quyền/version, lưu một kết quả hợp lệ, tăng version và phát update.
+      Request stale bị từ chối; client lấy state mới để thực hiện thao tác tiếp
+      theo.
+    </p>
+    <p>
+      Journal của relay dùng logical clock, origin và tombstone. Merge xác định
+      giúp replica hội tụ khi nhận write/delete theo thứ tự khác nhau.
+    </p>
+    <table>
+      <tr>
+        <th>State</th>
+        <th>Mô hình</th>
+      </tr>
+      <tr>
+        <td>Membership</td>
+        <td>Kiểm soát version tại một signaling writer</td>
+      </tr>
+      <tr>
+        <td>Thứ tự hội thoại</td>
+        <td>Sequence trong chuỗi sender/session, merge xác định</td>
+      </tr>
+      <tr>
+        <td>Bản nhận</td>
+        <td>Dedup sender/Message ID, kiểm tra nội dung bất biến</td>
+      </tr>
+      <tr>
+        <td>Replica journal</td>
+        <td>Eventual convergence sau trao đổi</td>
+      </tr>
+    </table>
+    <p>
+      Không đặt ra total order toàn hệ thống. Các bất biến được kiểm tra: không
+      nhận trùng trong phạm vi dedup; stale version không ghi đè state mới;
+      fan-out giữ cùng danh tính sự kiện; người nhận đã ACK không bị gửi lại chỉ
+      vì người khác lỗi.
+    </p>
+    <h2>10. Chịu lỗi và phục hồi</h2>
+    <p>
+      Failure model gồm crash/restart, mất kết nối, RPC không phản hồi, mất ACK,
+      trùng và đảo thứ tự. Timeout/lease xác định cách xử lý; một peer chậm có
+      thể tạm bị coi là không khả dụng.
+    </p>
+    <table>
+      <tr>
+        <th>Cơ chế</th>
+        <th>Mặc định</th>
+      </tr>
+      <tr>
+        <td>Thiết lập DataChannel</td>
+        <td>Tối đa 10 giây, có thể cấu hình</td>
+      </tr>
+      <tr>
+        <td>Đọc selected ICE route</td>
+        <td>Cửa sổ tối đa 1,5 giây khi kênh mở</td>
+      </tr>
+      <tr>
+        <td>RPC signaling/relay</td>
+        <td>Timeout 4 giây</td>
+      </tr>
+      <tr>
+        <td>ACK ứng dụng</td>
+        <td>2 giây sau khi transport chấp nhận gửi</td>
+      </tr>
+      <tr>
+        <td>Retry</td>
+        <td>Tối đa 3 lần truyền trong một lượt</td>
+      </tr>
+      <tr>
+        <td>Heartbeat/lease</td>
+        <td>10 giây / 30 giây, cộng chu kỳ quét</td>
+      </tr>
+      <tr>
+        <td>Mailbox nâng cao</td>
+        <td>Hạn lưu mặc định 24 giờ</td>
+      </tr>
+    </table>
+    <p>
+      Kênh DIRECT đang mở bị đóng/lỗi làm DirectTransport phát mode RELAY. Retry
+      dùng cùng ID; receiver chống trùng nếu bản trước đã lưu nhưng ACK bị mất.
+    </p>
+    <p>
+      Đóng peer hủy promise chờ. Pending/sent/forwarded của phiên gián đoạn được
+      phục hồi thành chưa xác nhận thay vì báo đã giao. Nếu relay không trả RPC,
+      peer thử tuyến khác; hết tuyến/ngân sách thì báo failed.
+    </p>
+    <p>
+      Queued chỉ có nghĩa relay đã lưu. ACK người nhận mới xác nhận delivered.
+      Replica bất đồng bộ có cửa sổ giữa ghi local và lan truyền; hai relay cùng
+      host vẫn thuộc một failure domain.
+    </p>
+    <h2>11. Bảo mật</h2>
+    <p>
+      Mật khẩu được băm bằng scrypt với salt riêng; server không lưu mật khẩu
+      plaintext. Token có thời hạn, lưu hash tại server và có thể thu hồi. Relay
+      kiểm tra token, subject và phiên trước request.
+    </p>
+    <p>
+      Sender binding, membership và block policy được kiểm tra ở các ranh giới
+      phù hợp. Schema kiểm tra ID, type, nội dung, thời gian, ordering metadata,
+      SDP/ICE và kích thước. Rate limit hạn chế lạm dụng; callback sai được chặn
+      để không làm process thoát.
+    </p>
+    <p>
+      Secret dịch vụ lấy từ môi trường hoặc kho secret riêng. Repository dùng
+      placeholder. VITE_* là cấu hình có thể xuất hiện trong bundle browser,
+      không phải kho cất khóa ký server.
+    </p>
+    <p>
+      Khi bật E2EE, peer dùng ECDH P-256, HKDF và AES-GCM; pin danh tính và
+      luồng thay khóa kiểm soát thay đổi identity. Envelope ngoài vẫn lộ
+      metadata định tuyến. Replica RPC dùng HMAC, timestamp và nonce; URL thành
+      viên được giới hạn.
+    </p>
+    <p>
+      HTTPS/TLS bảo vệ kết nối tới dịch vụ; E2EE bảo vệ nội dung khỏi relay. Hai
+      cơ chế giải quyết những ranh giới khác nhau. An toàn vẫn phụ thuộc thiết
+      bị, khóa và mã giao diện mà người dùng chạy.
+    </p>
+    <h2>12. Các chức năng nâng cao</h2>
+    <p>Bảng này mô tả phần mở rộng của bản tích hợp:</p>
+    <table>
+      <tr>
+        <th>Chức năng</th>
+        <th>Cách thực hiện</th>
+      </tr>
+      <tr>
+        <td>Nhiều relay</td>
+        <td>Pool kết nối outbound</td>
+      </tr>
+      <tr>
+        <td>Chọn theo latency/load</td>
+        <td>RTT làm mượt, số peer và pending mail</td>
+      </tr>
+      <tr>
+        <td>Tự chuyển relay</td>
+        <td>Timeout/disconnect và thử tuyến dự phòng</td>
+      </tr>
+      <tr>
+        <td>Bầu super-peer</td>
+        <td>Ứng cử relay đồng hành, endpoint, lease và merge</td>
+      </tr>
+      <tr>
+        <td>Replication</td>
+        <td>Journal qua HTTP giữa các kho riêng</td>
+      </tr>
+      <tr>
+        <td>Store-and-forward</td>
+        <td>Mailbox có TTL; queued khác delivered</td>
+      </tr>
+      <tr>
+        <td>E2EE</td>
+        <td>Khóa đầu cuối, ciphertext và xác thực metadata</td>
+      </tr>
+      <tr>
+        <td>DHT</td>
+        <td>Hash ring, signed record có thời hạn</td>
+      </tr>
+      <tr>
+        <td>File transfer</td>
+        <td>Chunk 2304 byte, ACK, SHA-256, IndexedDB</td>
+      </tr>
+      <tr>
+        <td>STUN</td>
+        <td>Binding và thu thập candidate trong ICE</td>
+      </tr>
+      <tr>
+        <td>WebRTC/TURN</td>
+        <td>DataChannel qua selected relay candidate</td>
+      </tr>
+      <tr>
+        <td>Thoại/video</td>
+        <td>Nhận cuộc gọi, quyền thiết bị, mute, hangup</td>
+      </tr>
+      <tr>
+        <td>Load test</td>
+        <td>Simulated peers và giới hạn concurrency</td>
+      </tr>
+    </table>
+    <p>
+      DHT/election là nguyên mẫu trên tập relay cấu hình, không phải
+      Kademlia/Raft hoàn chỉnh. Replication mailbox không sao chép toàn bộ tài
+      khoản/nhóm của signaling. Resume file dang dở qua restart là hướng mở
+      rộng.
+    </p>
+    <h2>13. Cài đặt và tổ chức mã</h2>
+    <p>
+      Node theo package là ^20.19.0 hoặc từ 22.12.0. Bộ kết quả hiện ghi nhận
+      Windows/Node v25.2.1. Browser cần WebRTC, Web Crypto và IndexedDB.
+    </p>
+    <pre>
+npm.cmd ci
+npm.cmd run setup:env</pre>
+    <p>Mở ba terminal, mỗi terminal chạy một process:</p>
+    <pre>
+npm.cmd run dev:signaling
+npm.cmd run dev:relay
+npm.cmd run dev:web</pre>
+    <p>
+      Signaling mặc định 4001, relay 4002, web dev 5173. Localhost trỏ về chính
+      thiết bị mở browser. Bản tích hợp có demo:local/demo:public và dashboard
+      PID/URL/log.
+    </p>
+    <p>
+      Kho bền vững khi chạy Node mặc định là DS01-runtime/data ngoài source;
+      DS01_DATA_DIR cho phép cấu hình lại. Docker sử dụng volume theo deploy
+      configuration.
+    </p>
+    <table>
+      <tr>
+        <th>Thư mục</th>
+        <th>Trách nhiệm</th>
+      </tr>
+      <tr>
+        <td>src/shared</td>
+        <td>Protocol, transport, delivery, ordering, peer core</td>
+      </tr>
+      <tr>
+        <td>src/signaling</td>
+        <td>Auth, discovery, nhóm và SDP/ICE</td>
+      </tr>
+      <tr>
+        <td>src/relay</td>
+        <td>Routing và mở rộng relay</td>
+      </tr>
+      <tr>
+        <td>src/server-kit</td>
+        <td>Runtime, log, secret và storage</td>
+      </tr>
+      <tr>
+        <td>src/web-peer</td>
+        <td>Giao diện, lịch sử, khóa và account sync</td>
+      </tr>
+      <tr>
+        <td>deploy / scripts / tests</td>
+        <td>Triển khai, công cụ và kiểm thử</td>
+      </tr>
+      <tr>
+        <td>docs</td>
+        <td>Tài liệu dùng chung</td>
+      </tr>
+    </table>
+    <h2>14. Kiểm thử và kết quả</h2>
+    <p>
+      Đợt evaluate ngày 20/11/2026 kết thúc lúc 23:26 giờ Việt Nam: 247/247 test
+      đạt trên working tree tích hợp. Ma trận chọn của mục 9 có 8 functional, 3
+      concurrency/conflict, 3 fault/recovery và 3 security/invalid-data đạt.
+      Hiệu năng được đo bằng thí nghiệm riêng.
+    </p>
+    <table>
+      <tr>
+        <th>Nhóm</th>
+        <th>Ví dụ</th>
+      </tr>
+      <tr>
+        <td>Functional</td>
+        <td>
+          Registration, metadata, hai chiều, dedup, ordering, nhóm/file mã hóa,
+          DHT
+        </td>
+      </tr>
+      <tr>
+        <td>Concurrency</td>
+        <td>
+          Trùng ID khi đăng ký; merge write/delete; hai sự kiện dùng cùng ID
+        </td>
+      </tr>
+      <tr>
+        <td>Fault/recovery</td>
+        <td>
+          Relay không trả RPC; signaling restart; offline mail qua relay khác
+        </td>
+      </tr>
+      <tr>
+        <td>Security</td>
+        <td>
+          Đổi metadata/ciphertext; replay replica request; record giả/hết hạn
+        </td>
+      </tr>
+    </table>
+    <p>
+      Các lần browser ngày 20/11 ghi nhận 54 kiểm tra cơ bản, 19 advanced và 16
+      account recovery đạt. Phạm vi là Chrome thật, DataChannel/IndexedDB và
+      service trên loopback. Bộ advanced chạy STUN/TURN lab và media thật;
+      account recovery dùng browser context/origin khác nhau.
+    </p>
+    <p>
+      Baseline Nam 8677e28 có 78 test B2/B4 đạt; toàn bộ baseline có 118/120
+      test đạt. Hai test công cụ đo tải/benchmark cho cùng lỗi trên baseline
+      main 60867fe. Các sửa đổi công cụ thuộc phần tích hợp và cần đi cùng bản
+      phát hành chung.
+    </p>
+    <p>
+      Các con số mô tả các snapshot khác nhau, không thay thế nhau. Hồ sơ tổng
+      hợp ở evidence/validation-2026-11-20.json giữ mốc chạy, commit/fingerprint
+      có sẵn và phạm vi. Bảng manual-results.csv dành cho kết quả mỗi buổi
+      nghiệm thu.
+    </p>
+    <h2>15. Đánh giá hiệu năng</h2>
+    <p>
+      Thử tải ngày 20/11 trên localhost dùng simulated Socket.IO peers, kiểm tra
+      đúng socket nhận và nguyên envelope. Latency đo đến sự kiện nhận, không
+      bao gồm browser persistence/ACK ứng dụng.
+    </p>
+    <table>
+      <tr>
+        <th>Peers</th>
+        <th>Messages</th>
+        <th>Workers</th>
+        <th>Delivered</th>
+        <th>Throughput (message/s)</th>
+        <th>p50 (ms)</th>
+        <th>p95 (ms)</th>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>60</td>
+        <td>1</td>
+        <td>60</td>
+        <td>395,39</td>
+        <td>2,15</td>
+        <td>3,84</td>
+      </tr>
+      <tr>
+        <td>20</td>
+        <td>200</td>
+        <td>8</td>
+        <td>200</td>
+        <td>453,30</td>
+        <td>15,85</td>
+        <td>31,31</td>
+      </tr>
+      <tr>
+        <td>50</td>
+        <td>500</td>
+        <td>20</td>
+        <td>500</td>
+        <td>755,24</td>
+        <td>24,68</td>
+        <td>43,97</td>
+      </tr>
+      <tr>
+        <td>100</td>
+        <td>1000</td>
+        <td>50</td>
+        <td>1000</td>
+        <td>772,30</td>
+        <td>58,25</td>
+        <td>115,13</td>
+      </tr>
+    </table>
+    <p>
+      Mỗi kịch bản có 0 duplicate, 0 misrouted, 0 corrupted delivery. Đây là
+      điểm đo, không phải giới hạn công suất tối đa.
+    </p>
+    <p>
+      Thí nghiệm Chrome riêng đo từ lưu pending đến lưu delivered, gồm kiểm tra
+      quyền và ACK ứng dụng. Mỗi mode có 20 mẫu sau một warmup, body 256 byte:
+    </p>
+    <table>
+      <tr>
+        <th>Mode</th>
+        <th>p50 (ms)</th>
+        <th>p95 (ms)</th>
+        <th>Max (ms)</th>
+      </tr>
+      <tr>
+        <td>DIRECT</td>
+        <td>99,50</td>
+        <td>144,50</td>
+        <td>144,70</td>
+      </tr>
+      <tr>
+        <td>RELAY</td>
+        <td>127,70</td>
+        <td>159,60</td>
+        <td>167,20</td>
+      </tr>
+    </table>
+    <p>
+      Median RELAY cao hơn DIRECT khoảng 28,20 ms trong bộ mẫu này. Scheduling,
+      persistence và quyền truy cập cũng ảnh hưởng, nên không quy toàn bộ chênh
+      lệch cho một bước mạng.
+    </p>
+    <p>
+      Payload relay hai chiều xấp xỉ 2 × message rate × envelope bytes, chưa
+      tính framing, ACK, mã hóa và replication. Relay cùng host chia sẻ
+      CPU/uplink; tăng số relay không tự động tăng tài nguyên host.
+    </p>
+    <h2>16. Kịch bản trình diễn</h2>
+    <p>
+      Ba peer A/B/C dùng tài khoản và browser profile tách biệt. Laptop Wi-Fi và
+      điện thoại 4G/5G tạo hai miền mạng; peer thứ ba dùng thiết bị hoặc context
+      riêng.
+    </p>
+    <table>
+      <tr>
+        <th># theo 5.10</th>
+        <th>Thao tác</th>
+        <th>Dấu hiệu quan sát</th>
+      </tr>
+      <tr>
+        <td>1</td>
+        <td>Mở URL dịch vụ và web</td>
+        <td>Health, dashboard, process phục vụ</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>Khởi động A/B/C</td>
+        <td>Ba danh tính riêng</td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>Đăng nhập/discovery</td>
+        <td>REGISTER và presence</td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>Chat trên DataChannel</td>
+        <td>DIRECT và ACK</td>
+      </tr>
+      <tr>
+        <td>5</td>
+        <td>Đối chiếu Message ID</td>
+        <td>DIRECT ở peer, không FORWARD tại relay</td>
+      </tr>
+      <tr>
+        <td>6</td>
+        <td>Dùng cặp có đường trực tiếp bị hạn chế</td>
+        <td>Tin tự đi RELAY</td>
+      </tr>
+      <tr>
+        <td>7</td>
+        <td>Đối chiếu log</td>
+        <td>SEND/RECEIVE/FORWARD cùng ID</td>
+      </tr>
+      <tr>
+        <td>8</td>
+        <td>Tạo nhóm A/B/C</td>
+        <td>Membership/version và fan-out</td>
+      </tr>
+      <tr>
+        <td>9</td>
+        <td>B/C gửi gần đồng thời</td>
+        <td>Không trùng, ACK từng receiver</td>
+      </tr>
+      <tr>
+        <td>10</td>
+        <td>Dừng đột ngột C</td>
+        <td>Presence đổi theo disconnect/lease</td>
+      </tr>
+      <tr>
+        <td>11</td>
+        <td>Đóng DIRECT đang mở</td>
+        <td>Fallback tự động</td>
+      </tr>
+      <tr>
+        <td>12</td>
+        <td>Mở lại C</td>
+        <td>Giữ danh tính/lịch sử và nhận tin mới</td>
+      </tr>
+    </table>
+    <p>
+      Dùng Task Manager/Details để xem Node PID và bộ nhớ, Chrome Task Manager
+      để xem renderer, dashboard để xem URL/log. Không suy ra chia sẻ bộ nhớ từ
+      số virtual memory.
+    </p>
+    <p>
+      Checkbox ép relay phục vụ kiểm tra chủ đích; selected candidate và log
+      giải thích đường thực tế. Kịch bản chi tiết ở demo-script.md và
+      MANUAL-ACCEPTANCE.md.
+    </p>
+    <h2>17. Triển khai và CI/CD</h2>
+    <p>
+      Web được phục vụ qua HTTPS; reverse proxy chuyển signaling/relay đến các
+      process riêng. TURN có endpoint/allocation riêng. Nếu laptop chạy tunnel,
+      laptop là host dịch vụ; tunnel công khai URL và chuyển tiếp về đó. Dừng
+      host/tunnel làm URL phiên dừng.
+    </p>
+    <p>
+      Triển khai giữ registry, khóa, vault và journal trên storage bền vững.
+      Không xóa volume để thử restart; không cho hai signaling writer cùng ghi
+      một state file.
+    </p>
+    <p>
+      Thiết kế CI/CD của bản phát triển gồm verify
+      dependency/type/lint/test/build; browser regression; build app/web
+      container; publish image gắn commit SHA; manual deployment qua SSH host
+      identity đã pin và health check.
+    </p>
+    <p>
+      Rollback image dùng release trước; dữ liệu/migration cần backup riêng. Kết
+      quả pipeline được ghi bằng Actions run/artifact tương ứng, không suy ra từ
+      việc có file YAML.
+    </p>
+    <p>
+      Với B2/B4 và tài liệu chung, nhóm push Nam rồi review Pull Request Nam →
+      main. Workflow CI/CD được hợp nhất cùng phần D1 và các dependency liên
+      quan.
+    </p>
+    <h2>18. Giới hạn và hướng phát triển</h2>
+    <p>
+      Tài khoản/membership có một signaling coordinator. Nhiều relay bảo vệ
+      đường dữ liệu trong phạm vi lỗi relay, không tự cung cấp failover cho mọi
+      state. Replica bất đồng bộ có thể tạm khác và có cửa sổ mất ghi trước lan
+      truyền.
+    </p>
+    <p>
+      Delivery là best effort với retry hữu hạn, ACK và dedup có retention.
+      Failed nghĩa thiếu xác nhận trong ngân sách, không chứng minh receiver
+      chưa từng lưu. Không có cam kết exactly-once tuyệt đối hoặc total order
+      toàn hệ thống.
+    </p>
+    <p>
+      Mailbox có TTL/quota; file 512 KiB; browser storage phụ thuộc quota/vòng
+      đời dữ liệu. Thiết bị mới cần bản sao mã hóa và thông tin mở khóa.
+      DHT/election cần làm mới lease.
+    </p>
+    <p>
+      Hướng mở rộng: relay ở nhiều failure domain, đo trên nhiều cấu hình mạng,
+      telemetry/quota vận hành, resume file, key recovery và giảm phụ thuộc
+      signaling coordinator.
+    </p>
+    <h2>19. Kết luận</h2>
+    <p>
+      DS01 P2P Chat tổ chức peer và dịch vụ độc lập giao tiếp qua mạng, ưu tiên
+      WebRTC và có application relay. Message ID, ACK, retry, dedup, sequence và
+      version giải quyết độ tin cậy/đồng thời ở tầng ứng dụng.
+    </p>
+    <p>
+      Báo cáo phân biệt baseline đã commit, bản tích hợp và từng phép đo để
+      người đọc đối chiếu đúng. Nhóm hoàn thiện thông tin học vụ, hợp nhất mã và
+      điền biên bản demo trước khi chốt report.pdf cùng tag/release.
+    </p>
+    <h2>20. Tài liệu tham khảo</h2>
+    <ul>
+      <li>
+        [1] COURSE PROJECT SPECIFICATION.pdf, tài liệu giảng viên cung cấp, 17
+        trang; mục 4, 5, 9, 10, 11, 13.
+      </li>
+      <li>
+        [2] <a href="https://github.com/Ngocnguyen055/DS01">Mã nguồn DS01</a>.
+      </li>
+      <li>
+        [3] IETF,
+        <a href="https://www.rfc-editor.org/rfc/rfc8445">RFC 8445 — ICE</a>.
+      </li>
+      <li>
+        [4] IETF,
+        <a href="https://www.rfc-editor.org/rfc/rfc8489">RFC 8489 — STUN</a>.
+      </li>
+      <li>
+        [5] IETF,
+        <a href="https://www.rfc-editor.org/rfc/rfc8656">RFC 8656 — TURN</a>.
+      </li>
+      <li>
+        [6] IETF,
+        <a href="https://www.rfc-editor.org/rfc/rfc8831"
+          >RFC 8831 — WebRTC Data Channels</a
+        >.
+      </li>
+      <li>
+        [7] Socket.IO,
+        <a href="https://socket.io/docs/v4/delivery-guarantees/"
+          >Delivery guarantees</a
+        >.
+      </li>
+      <li>
+        [8] Node.js,
+        <a
+          href="https://nodejs.org/api/crypto.html#cryptoscryptpassword-salt-keylen-options-callback"
+          >Crypto — scrypt</a
+        >.
+      </li>
+    </ul>
+    <p>
+      Nhóm kiểm tra, hiểu và chịu trách nhiệm về thư viện, mã nguồn, công cụ hỗ
+      trợ và kết quả theo mục 13 của đề bài.
+    </p>
+    <h2>21. Phụ lục</h2>
+    <table>
+      <tr>
+        <th>Tệp</th>
+        <th>Mục đích</th>
+      </tr>
+      <tr>
+        <td>report.md / report.docx / report.html / report.pdf</td>
+        <td>Nội dung gốc, Word, xem web và bản in</td>
+      </tr>
+      <tr>
+        <td>architecture.md / protocol.md</td>
+        <td>Thiết kế thành phần và envelope</td>
+      </tr>
+      <tr>
+        <td>authentication.md / advanced-features.md</td>
+        <td>Tài khoản và phần mở rộng</td>
+      </tr>
+      <tr>
+        <td>test-plan.md / implementation-status.md</td>
+        <td>Ma trận, phiên bản và kết quả</td>
+      </tr>
+      <tr>
+        <td>demo-script.md / MANUAL-ACCEPTANCE.md</td>
+        <td>Kịch bản và bước nghiệm thu</td>
+      </tr>
+      <tr>
+        <td>manual-results.csv</td>
+        <td>Biên bản từng buổi</td>
+      </tr>
+      <tr>
+        <td>evidence/validation-2026-11-20.json</td>
+        <td>Số liệu tổng hợp có nguồn và phạm vi</td>
+      </tr>
+    </table>
+    <p>
+      Ảnh/JSON của đợt cũ trong evidence giữ giá trị lịch sử của chính lần chạy
+      đó; không thay ngày hoặc kết quả để coi thành bằng chứng của phiên bản
+      khác.
+    </p>
+  </body>
+</html>

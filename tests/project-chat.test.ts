@@ -100,7 +100,7 @@ describe("persistent project chat authorization", () => {
         identityProof: jwt.sign(
           { sub: peerId },
           process.env.JWT_SECRET || "local-development-only-secret",
-          { expiresIn: '1h' },
+          { expiresIn: "1h" },
         ),
         rtc: class {} as unknown as PeerConfig["rtc"],
         store: stores[index],
@@ -153,7 +153,7 @@ describe("persistent project chat authorization", () => {
         token: jwt.sign(
           { sub: A },
           process.env.PEER_SECRET || "local-development-only-secret",
-          { expiresIn: '1h', audience: 'ds01-relay', issuer: 'ds01-signaling' },
+          { expiresIn: "1h", audience: "ds01-relay", issuer: "ds01-signaling" },
         ),
       },
     });

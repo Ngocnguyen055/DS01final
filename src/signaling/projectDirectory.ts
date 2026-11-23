@@ -1,5 +1,5 @@
 import type { Group } from "@ds01/shared";
-import { requireSecret } from '../server-kit/secrets.ts';
+import { requireSecret } from "../server-kit/secrets.ts";
 
 export interface ProjectDirectory {
   group(id: string): Promise<Group | null>;
@@ -7,10 +7,9 @@ export interface ProjectDirectory {
   forPeer(peerId: string): Promise<Group[]>;
 }
 
-
 export function httpProjectDirectory(): ProjectDirectory {
   const base = process.env.API_INTERNAL_URL || "http://127.0.0.1:4000";
-  const secret = requireSecret('PEER_SECRET');
+  const secret = requireSecret("PEER_SECRET");
   async function read<T>(path: string): Promise<T | null> {
     const response = await fetch(`${base}${path}`, {
       headers: { "x-peer-secret": secret },

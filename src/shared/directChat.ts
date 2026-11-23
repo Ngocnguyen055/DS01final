@@ -10,7 +10,6 @@ import {
   type StoredMessage,
 } from "./peer.ts";
 
-
 export class DirectChatService {
   constructor(
     private peer: PeerClient,

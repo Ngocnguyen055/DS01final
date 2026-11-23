@@ -1,352 +1,684 @@
-import { isDirectMessageBetween, parseMessage, peerIdSchema, sameMessageEvent, type DirectChatContact, type DirectChatStore, type StoredMessage, type MessageStatus, type ChatAttachment, orderMessages, } from "@ds01/shared";
-import { publicIdentitySchema, type DeviceIdentity, type PublicIdentity, type IdentityStore } from '../shared/secure.ts';
-import { z } from 'zod';
-import { chatAttachmentSchema, messageSchema } from '../shared/protocol.ts';
-import { callRecordSchema, recoverCallRecords, type CallRecord } from './callHistory.ts';
-import { encodeBytes, decodeBytes } from './accountCrypto.ts';
+import {
+  isDirectMessageBetween,
+  parseMessage,
+  peerIdSchema,
+  sameMessageEvent,
+  type DirectChatContact,
+  type DirectChatStore,
+  type StoredMessage,
+  type MessageStatus,
+  type ChatAttachment,
+  orderMessages,
+} from "@ds01/shared";
+import {
+  publicIdentitySchema,
+  type DeviceIdentity,
+  type PublicIdentity,
+  type IdentityStore,
+} from "../shared/secure.ts";
+import { z } from "zod";
+import { chatAttachmentSchema, messageSchema } from "../shared/protocol.ts";
+import {
+  callRecordSchema,
+  recoverCallRecords,
+  type CallRecord,
+} from "./callHistory.ts";
+import { encodeBytes, decodeBytes } from "./accountCrypto.ts";
 
-const rowSchema = z.object({ message: messageSchema, status: z.enum(['pending', 'sent', 'forwarded', 'queued', 'delivered', 'failed', 'received']), queuedUntil: z.number().int().positive().optional() }).strict();
-export const accountSnapshotSchema = z.object({ v: z.literal(1), peerId: peerIdSchema, rows: z.array(rowSchema).max(1000),
-    contacts: z.array(z.object({ peerId: peerIdSchema, name: z.string().max(80), email: z.string().max(254), updatedAt: z.number().int().nonnegative() }).strict()).max(500),
-    blocked: z.array(peerIdSchema).max(10000), blockEdits: z.record(peerIdSchema, z.object({ blocked: z.boolean(), at: z.number().int().nonnegative() })).default({}), deleted: z.array(z.string().max(120)).max(10000), seen: z.array(z.string().max(80)).max(10000),
+const rowSchema = z
+  .object({
+    message: messageSchema,
+    status: z.enum([
+      "pending",
+      "sent",
+      "forwarded",
+      "queued",
+      "delivered",
+      "failed",
+      "received",
+    ]),
+    queuedUntil: z.number().int().positive().optional(),
+  })
+  .strict();
+export const accountSnapshotSchema = z
+  .object({
+    v: z.literal(1),
+    peerId: peerIdSchema,
+    rows: z.array(rowSchema).max(1000),
+    contacts: z
+      .array(
+        z
+          .object({
+            peerId: peerIdSchema,
+            name: z.string().max(80),
+            email: z.string().max(254),
+            updatedAt: z.number().int().nonnegative(),
+          })
+          .strict(),
+      )
+      .max(500),
+    blocked: z.array(peerIdSchema).max(10000),
+    blockEdits: z
+      .record(
+        peerIdSchema,
+        z.object({ blocked: z.boolean(), at: z.number().int().nonnegative() }),
+      )
+      .default({}),
+    deleted: z.array(z.string().max(120)).max(10000),
+    seen: z.array(z.string().max(80)).max(10000),
     calls: z.array(callRecordSchema).max(1000).default([]),
-    groupNames: z.record(z.string().uuid(), z.string().max(100)), pins: z.record(peerIdSchema, publicIdentitySchema),
-    files: z.array(z.object({ file: chatAttachmentSchema, data: z.string().max(12 * 1024 * 1024).regex(/^[A-Za-z0-9+/]*={0,2}$/) }).strict()).max(1000) }).strict();
+    groupNames: z.record(z.string().uuid(), z.string().max(100)),
+    pins: z.record(peerIdSchema, publicIdentitySchema),
+    files: z
+      .array(
+        z
+          .object({
+            file: chatAttachmentSchema,
+            data: z
+              .string()
+              .max(12 * 1024 * 1024)
+              .regex(/^[A-Za-z0-9+/]*={0,2}$/),
+          })
+          .strict(),
+      )
+      .max(1000),
+  })
+  .strict();
 export type AccountSnapshot = z.infer<typeof accountSnapshotSchema>;
-const rowId = (row: StoredMessage) => `${row.message.senderId}:${row.message.messageId}:${row.message.receiverId}`;
-export function mergeAccountSnapshots(local: AccountSnapshot, remote: AccountSnapshot): AccountSnapshot {
-    if (local.peerId !== remote.peerId) throw Error('Bản sao thuộc tài khoản khác.');
-    const deleted = new Set([...remote.deleted, ...local.deleted]), rows = new Map<string, StoredMessage>();
-    const priority: Record<MessageStatus, number> = { pending: 0, sent: 1, forwarded: 2, queued: 3, failed: 4, delivered: 5, received: 5 };
-    for (const row of [...remote.rows, ...local.rows]) {
-        if (row.message.senderId !== local.peerId && row.message.receiverId !== local.peerId) throw Error('Lịch sử chứa tin nhắn của tài khoản khác.');
-        const id = rowId(row), previous = rows.get(id);
-        if (previous && !sameMessageEvent(previous.message, row.message)) throw Error('Bản sao chứa Message ID có nội dung xung đột.');
-        if (!deleted.has(id) && (!previous || priority[row.status] >= priority[previous.status])) rows.set(id, row);
-    }
-    const contacts = new Map<string, DirectChatContact>();
-    for (const contact of [...remote.contacts, ...local.contacts]) if (!contacts.has(contact.peerId) || contacts.get(contact.peerId)!.updatedAt <= contact.updatedAt) contacts.set(contact.peerId, contact);
-    const files = new Map([...remote.files, ...local.files].map(value => [value.file.id, value]));
-    const blockEdits = { ...remote.blockEdits };
-    for (const [id, edit] of Object.entries(local.blockEdits)) if (!blockEdits[id] || edit.at >= blockEdits[id].at) blockEdits[id] = edit;
-    const blocked = new Set([...remote.blocked, ...local.blocked]);
-    for (const [id, edit] of Object.entries(blockEdits)) { if (edit.blocked) blocked.add(id); else blocked.delete(id); }
-    const calls = new Map([...remote.calls, ...local.calls].map(call => [call.id, call]));
-    for (const call of remote.calls) if (call.updatedAt > (calls.get(call.id)?.updatedAt || 0)) calls.set(call.id, call);
-    const finalRows = orderMessages([...rows.values()]).slice(-1000), usedFiles = new Set(finalRows.flatMap(row => row.message.attachments?.map(file => file.id) || []));
-    let fileBudget = 8 * 1024 * 1024;
-    const snapshotFiles = [...usedFiles].reverse().flatMap(id => {
-        const file = files.get(id);
-        if (!file || file.file.size > fileBudget) return [];
-        fileBudget -= file.file.size; return [file];
-    });
-    return accountSnapshotSchema.parse({ ...remote, ...local, rows: finalRows, calls: [...calls.values()].filter(call => !deleted.has('call:' + call.id)).sort((a, b) => a.startedAt - b.startedAt).slice(-1000), contacts: [...contacts.values()].slice(-500),
-        blocked: [...blocked], blockEdits, deleted: [...deleted].slice(-10000), seen: [...new Set([...remote.seen, ...local.seen])].slice(-10000),
-        groupNames: { ...remote.groupNames, ...local.groupNames }, pins: { ...remote.pins, ...local.pins }, files: snapshotFiles });
+const rowId = (row: StoredMessage) =>
+  `${row.message.senderId}:${row.message.messageId}:${row.message.receiverId}`;
+export function mergeAccountSnapshots(
+  local: AccountSnapshot,
+  remote: AccountSnapshot,
+): AccountSnapshot {
+  if (local.peerId !== remote.peerId)
+    throw Error("Bản sao thuộc tài khoản khác.");
+  const deleted = new Set([...remote.deleted, ...local.deleted]),
+    rows = new Map<string, StoredMessage>();
+  const priority: Record<MessageStatus, number> = {
+    pending: 0,
+    sent: 1,
+    forwarded: 2,
+    queued: 3,
+    failed: 4,
+    delivered: 5,
+    received: 5,
+  };
+  for (const row of [...remote.rows, ...local.rows]) {
+    if (
+      row.message.senderId !== local.peerId &&
+      row.message.receiverId !== local.peerId
+    )
+      throw Error("Lịch sử chứa tin nhắn của tài khoản khác.");
+    const id = rowId(row),
+      previous = rows.get(id);
+    if (previous && !sameMessageEvent(previous.message, row.message))
+      throw Error("Bản sao chứa Message ID có nội dung xung đột.");
+    if (
+      !deleted.has(id) &&
+      (!previous || priority[row.status] >= priority[previous.status])
+    )
+      rows.set(id, row);
+  }
+  const contacts = new Map<string, DirectChatContact>();
+  for (const contact of [...remote.contacts, ...local.contacts])
+    if (
+      !contacts.has(contact.peerId) ||
+      contacts.get(contact.peerId)!.updatedAt <= contact.updatedAt
+    )
+      contacts.set(contact.peerId, contact);
+  const files = new Map(
+    [...remote.files, ...local.files].map((value) => [value.file.id, value]),
+  );
+  const blockEdits = { ...remote.blockEdits };
+  for (const [id, edit] of Object.entries(local.blockEdits))
+    if (!blockEdits[id] || edit.at >= blockEdits[id].at) blockEdits[id] = edit;
+  const blocked = new Set([...remote.blocked, ...local.blocked]);
+  for (const [id, edit] of Object.entries(blockEdits)) {
+    if (edit.blocked) blocked.add(id);
+    else blocked.delete(id);
+  }
+  const calls = new Map(
+    [...remote.calls, ...local.calls].map((call) => [call.id, call]),
+  );
+  for (const call of remote.calls)
+    if (call.updatedAt > (calls.get(call.id)?.updatedAt || 0))
+      calls.set(call.id, call);
+  const finalRows = orderMessages([...rows.values()]).slice(-1000),
+    usedFiles = new Set(
+      finalRows.flatMap(
+        (row) => row.message.attachments?.map((file) => file.id) || [],
+      ),
+    );
+  let fileBudget = 8 * 1024 * 1024;
+  const snapshotFiles = [...usedFiles].reverse().flatMap((id) => {
+    const file = files.get(id);
+    if (!file || file.file.size > fileBudget) return [];
+    fileBudget -= file.file.size;
+    return [file];
+  });
+  return accountSnapshotSchema.parse({
+    ...remote,
+    ...local,
+    rows: finalRows,
+    calls: [...calls.values()]
+      .filter((call) => !deleted.has("call:" + call.id))
+      .sort((a, b) => a.startedAt - b.startedAt)
+      .slice(-1000),
+    contacts: [...contacts.values()].slice(-500),
+    blocked: [...blocked],
+    blockEdits,
+    deleted: [...deleted].slice(-10000),
+    seen: [...new Set([...remote.seen, ...local.seen])].slice(-10000),
+    groupNames: { ...remote.groupNames, ...local.groupNames },
+    pins: { ...remote.pins, ...local.pins },
+    files: snapshotFiles,
+  });
 }
 export class WebStore implements DirectChatStore, IdentityStore {
-    private contactWrites = Promise.resolve();
-    private revision = 0;
-    constructor(private scope: string, private changed?: () => void) { }
-    private notify() { this.revision++; this.changed?.(); }
-    private get key() {
-        return `ds01-history-v1-${this.scope}`;
+  private contactWrites = Promise.resolve();
+  private revision = 0;
+  constructor(
+    private scope: string,
+    private changed?: () => void,
+  ) {}
+  private notify() {
+    this.revision++;
+    this.changed?.();
+  }
+  private get key() {
+    return `ds01-history-v1-${this.scope}`;
+  }
+  private get contactKey() {
+    return `ds01-direct-contacts-v1-${this.scope}`;
+  }
+  private get blockedKey() {
+    return `ds01-direct-blocked-v1-${this.scope}`;
+  }
+  private read(): StoredMessage[] {
+    try {
+      const rows: unknown = JSON.parse(localStorage.getItem(this.key) || "[]");
+      if (!Array.isArray(rows)) throw new Error("invalid history");
+      return rows.map((row: unknown): StoredMessage => {
+        if (
+          !row ||
+          typeof row !== "object" ||
+          !("message" in row) ||
+          !("status" in row) ||
+          typeof row.status !== "string" ||
+          ![
+            "pending",
+            "sent",
+            "forwarded",
+            "queued",
+            "delivered",
+            "failed",
+            "received",
+          ].includes(row.status) ||
+          Object.keys(row).some(
+            (key) => !["message", "status", "queuedUntil"].includes(key),
+          ) ||
+          ("queuedUntil" in row &&
+            (!Number.isSafeInteger(row.queuedUntil) ||
+              Number(row.queuedUntil) <= 0))
+        )
+          throw new Error("invalid stored message");
+        return {
+          message: parseMessage(row.message),
+          status: row.status as MessageStatus,
+          ...("queuedUntil" in row
+            ? { queuedUntil: Number(row.queuedUntil) }
+            : {}),
+        };
+      });
+    } catch {
+      throw new Error(
+        "Lịch sử cục bộ bị hỏng. Hãy xuất dữ liệu trước khi đặt lại storage.",
+      );
     }
-    private get contactKey() {
-        return `ds01-direct-contacts-v1-${this.scope}`;
+  }
+  private write(rows: StoredMessage[]) {
+    localStorage.setItem(this.key, JSON.stringify(rows.slice(-1000)));
+    this.notify();
+  }
+  async put(row: StoredMessage) {
+    const rows = this.read();
+    const index = rows.findIndex(
+      (r) =>
+        r.message.messageId === row.message.messageId &&
+        r.message.receiverId === row.message.receiverId &&
+        r.message.senderId === row.message.senderId,
+    );
+    if (index >= 0 && !sameMessageEvent(rows[index].message, row.message))
+      throw new Error("conflicting message ID");
+    if (index >= 0) rows[index] = row;
+    else rows.push(row);
+    this.write(rows);
+    if (row.status === "received") {
+      const key = `${this.key}-seen`;
+      const seen = this.seen();
+      seen.add(`${row.message.senderId}:${row.message.messageId}`);
+      localStorage.setItem(key, JSON.stringify([...seen].slice(-10000)));
     }
-    private get blockedKey() {
-        return `ds01-direct-blocked-v1-${this.scope}`;
+  }
+  async putDirect(row: StoredMessage) {
+    const currentPeerId = peerIdSchema.parse(this.scope);
+    const message = row.message;
+    const otherPeerId =
+      message.senderId === currentPeerId
+        ? message.receiverId
+        : message.senderId;
+    peerIdSchema.parse(otherPeerId);
+    if (
+      otherPeerId === currentPeerId ||
+      !isDirectMessageBetween(message, currentPeerId, otherPeerId)
+    )
+      throw new Error("direct message does not belong to this store");
+    await this.put(row);
+  }
+  async mark(messageId: string, receiverId: string, status: MessageStatus) {
+    const rows = this.read();
+    for (const row of rows)
+      if (
+        row.message.messageId === messageId &&
+        row.message.receiverId === receiverId
+      )
+        row.status = status;
+    this.write(rows);
+  }
+  async has(messageId: string, senderId: string) {
+    return (
+      this.seen().has(`${senderId}:${messageId}`) ||
+      this.read().some(
+        (r) =>
+          r.message.messageId === messageId && r.message.senderId === senderId,
+      )
+    );
+  }
+  async list() {
+    return orderMessages(this.read());
+  }
+  async listDirect(peerId: string) {
+    const currentPeerId = peerIdSchema.parse(this.scope);
+    const otherPeerId = peerIdSchema.parse(peerId);
+    if (currentPeerId === otherPeerId)
+      throw new Error("direct conversation requires another peer");
+    return orderMessages(
+      this.read().filter((row) =>
+        isDirectMessageBetween(row.message, currentPeerId, otherPeerId),
+      ),
+    );
+  }
+  async listDirectAttachments(peerId: string) {
+    return (await this.listDirect(peerId)).filter(
+      (row) => row.message.type === "attachment",
+    );
+  }
+  async deleteDirect(peerId: string) {
+    const currentPeerId = peerIdSchema.parse(this.scope);
+    const otherPeerId = peerIdSchema.parse(peerId);
+    if (currentPeerId === otherPeerId)
+      throw new Error("direct conversation requires another peer");
+    const rows = this.read(),
+      deleted = new Set<string>(
+        JSON.parse(localStorage.getItem(`${this.key}-deleted`) || "[]"),
+      );
+    for (const row of rows)
+      if (isDirectMessageBetween(row.message, currentPeerId, otherPeerId))
+        deleted.add(rowId(row));
+    localStorage.setItem(
+      `${this.key}-deleted`,
+      JSON.stringify([...deleted].slice(-10000)),
+    );
+    const previousCalls = this.listCalls();
+    for (const call of previousCalls)
+      if (call.peerId === otherPeerId) deleted.add("call:" + call.id);
+    localStorage.setItem(
+      `${this.key}-deleted`,
+      JSON.stringify([...deleted].slice(-10000)),
+    );
+    const calls = previousCalls.filter((call) => call.peerId !== otherPeerId);
+    localStorage.setItem(`${this.key}-calls`, JSON.stringify(calls));
+    this.write(
+      rows.filter(
+        (row) =>
+          !isDirectMessageBetween(row.message, currentPeerId, otherPeerId),
+      ),
+    );
+  }
+  async setDirectBlocked(peerId: string, blocked: boolean) {
+    const otherPeerId = peerIdSchema.parse(peerId);
+    if (otherPeerId === peerIdSchema.parse(this.scope))
+      throw new Error("cannot block yourself");
+    const rows = new Set<string>(
+      JSON.parse(localStorage.getItem(this.blockedKey) || "[]") as string[],
+    );
+    if (blocked) rows.add(otherPeerId);
+    else rows.delete(otherPeerId);
+    localStorage.setItem(this.blockedKey, JSON.stringify([...rows].sort()));
+    const edits = JSON.parse(
+      localStorage.getItem(`${this.blockedKey}-edits`) || "{}",
+    );
+    Object.defineProperty(edits, otherPeerId, {
+      value: {
+        blocked,
+        at: Math.max(Date.now(), (edits[otherPeerId]?.at || 0) + 1),
+      },
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    localStorage.setItem(`${this.blockedKey}-edits`, JSON.stringify(edits));
+    this.notify();
+  }
+  async isDirectBlocked(peerId: string) {
+    return (await this.listDirectBlocked()).includes(
+      peerIdSchema.parse(peerId),
+    );
+  }
+  async listDirectBlocked() {
+    try {
+      const rows = JSON.parse(
+        localStorage.getItem(this.blockedKey) || "[]",
+      ) as unknown;
+      return Array.isArray(rows)
+        ? rows.filter(
+            (row): row is string => peerIdSchema.safeParse(row).success,
+          )
+        : [];
+    } catch {
+      return [];
     }
-    private read(): StoredMessage[] {
-        try {
-            const rows: unknown = JSON.parse(localStorage.getItem(this.key) || "[]");
-            if (!Array.isArray(rows))
-                throw new Error('invalid history');
-            return rows.map((row: unknown): StoredMessage => {
-                if (!row || typeof row !== 'object' || !('message' in row) || !('status' in row) ||
-                    typeof row.status !== 'string' || !['pending', 'sent', 'forwarded', 'queued', 'delivered', 'failed', 'received'].includes(row.status) ||
-                    Object.keys(row).some(key => !['message', 'status', 'queuedUntil'].includes(key)) ||
-                    'queuedUntil' in row && (!Number.isSafeInteger(row.queuedUntil) || Number(row.queuedUntil) <= 0))
-                    throw new Error('invalid stored message');
-                return { message: parseMessage(row.message), status: row.status as MessageStatus, ...('queuedUntil' in row ? { queuedUntil: Number(row.queuedUntil) } : {}) };
-            });
-        }
-        catch {
-            throw new Error('Lịch sử cục bộ bị hỏng. Hãy xuất dữ liệu trước khi đặt lại storage.');
-        }
+  }
+  async saveDirectContact(contact: DirectChatContact) {
+    const operation = this.contactWrites.then(() => this.saveContact(contact));
+    this.contactWrites = operation.catch(() => {});
+    return operation;
+  }
+  private async saveContact(contact: DirectChatContact) {
+    const peerId = peerIdSchema.parse(contact.peerId);
+    if (peerId === peerIdSchema.parse(this.scope))
+      throw new Error("cannot save yourself");
+    const contacts = await this.listDirectContacts();
+    const next = [contact, ...contacts.filter((row) => row.peerId !== peerId)];
+    localStorage.setItem(this.contactKey, JSON.stringify(next.slice(0, 500)));
+    this.notify();
+  }
+  async listDirectContacts(): Promise<DirectChatContact[]> {
+    try {
+      const rows = JSON.parse(
+        localStorage.getItem(this.contactKey) || "[]",
+      ) as DirectChatContact[];
+      return Array.isArray(rows)
+        ? rows
+            .filter(
+              (row) =>
+                peerIdSchema.safeParse(row.peerId).success &&
+                typeof row.name === "string" &&
+                typeof row.email === "string" &&
+                Number.isSafeInteger(row.updatedAt),
+            )
+            .sort((left, right) => right.updatedAt - left.updatedAt)
+        : [];
+    } catch {
+      return [];
     }
-    private write(rows: StoredMessage[]) {
-        localStorage.setItem(this.key, JSON.stringify(rows.slice(-1000)));
-        this.notify();
+  }
+  async removeDirectContact(peerId: string) {
+    const otherPeerId = peerIdSchema.parse(peerId);
+    localStorage.setItem(
+      this.contactKey,
+      JSON.stringify(
+        (await this.listDirectContacts()).filter(
+          (contact) => contact.peerId !== otherPeerId,
+        ),
+      ),
+    );
+    this.notify();
+  }
+  private seen(): Set<string> {
+    try {
+      const value: unknown = JSON.parse(
+        localStorage.getItem(`${this.key}-seen`) || "[]",
+      );
+      return new Set(
+        Array.isArray(value)
+          ? value.filter((item) => typeof item === "string")
+          : [],
+      );
+    } catch {
+      return new Set();
     }
-    async put(row: StoredMessage) {
-        const rows = this.read();
-        const index = rows.findIndex((r) => r.message.messageId === row.message.messageId &&
-            r.message.receiverId === row.message.receiverId &&
-            r.message.senderId === row.message.senderId);
-        if (index >= 0 && !sameMessageEvent(rows[index].message, row.message))
-            throw new Error('conflicting message ID');
-        if (index >= 0)
-            rows[index] = row;
-        else
-            rows.push(row);
-        this.write(rows);
-        if (row.status === 'received') {
-            const key = `${this.key}-seen`;
-            const seen = this.seen();
-            seen.add(`${row.message.senderId}:${row.message.messageId}`);
-            localStorage.setItem(key, JSON.stringify([...seen].slice(-10000)));
-        }
+  }
+  listCalls(): CallRecord[] {
+    return callRecordSchema
+      .array()
+      .parse(JSON.parse(localStorage.getItem(`${this.key}-calls`) || "[]"));
+  }
+  putCall(input: CallRecord) {
+    const record = callRecordSchema.parse(input),
+      records = this.listCalls(),
+      index = records.findIndex((call) => call.id === record.id);
+    if (index >= 0 && JSON.stringify(records[index]) === JSON.stringify(record))
+      return false;
+    if (index >= 0) records[index] = record;
+    else records.push(record);
+    localStorage.setItem(
+      `${this.key}-calls`,
+      JSON.stringify(
+        records.sort((a, b) => a.startedAt - b.startedAt).slice(-1000),
+      ),
+    );
+    this.notify();
+    return true;
+  }
+  recoverCalls() {
+    const records = recoverCallRecords(this.listCalls());
+    for (const record of records) this.putCall(record);
+  }
+  private async files(): Promise<IDBDatabase> {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open("ds01-files-v1", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("files");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+  }
+  private async security(key: string, value?: unknown): Promise<unknown> {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("ds01-security-v1", 1);
+      request.onupgradeneeded = () => request.result.createObjectStore("keys");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction(
+            "keys",
+            value === undefined ? "readonly" : "readwrite",
+          ),
+          store = tx.objectStore("keys");
+        const request =
+          value === undefined
+            ? store.get(`${this.scope}:${key}`)
+            : store.put(value, `${this.scope}:${key}`);
+        let result: unknown;
+        request.onsuccess = () => {
+          result = request.result;
+        };
+        tx.oncomplete = () => resolve(result);
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () =>
+          reject(tx.error || Error("security key storage failed"));
+      });
+    } finally {
+      db.close();
     }
-    async putDirect(row: StoredMessage) {
-        const currentPeerId = peerIdSchema.parse(this.scope);
-        const message = row.message;
-        const otherPeerId = message.senderId === currentPeerId
-            ? message.receiverId
-            : message.senderId;
-        peerIdSchema.parse(otherPeerId);
-        if (otherPeerId === currentPeerId ||
-            !isDirectMessageBetween(message, currentPeerId, otherPeerId))
-            throw new Error("direct message does not belong to this store");
-        await this.put(row);
+  }
+  async getIdentity() {
+    return (await this.security("identity")) as DeviceIdentity | undefined;
+  }
+  async putIdentity(value: DeviceIdentity) {
+    await this.security("identity", value);
+  }
+  async getAccountKeys() {
+    return (await this.security("account-keys")) as
+      { vaultId: string; key: CryptoKey } | undefined;
+  }
+  async putAccountKeys(vaultId: string, key: CryptoKey) {
+    await this.security("account-keys", { vaultId, key });
+  }
+  async getPin(peerId: string) {
+    const value = await this.security(`pin:${peerId}`);
+    return value ? publicIdentitySchema.parse(value) : undefined;
+  }
+  async putPin(peerId: string, value: PublicIdentity) {
+    await this.security(`pin:${peerId}`, publicIdentitySchema.parse(value));
+  }
+  async putFile(file: ChatAttachment, data: Uint8Array): Promise<void> {
+    const db = await this.files();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("files", "readwrite");
+        tx.objectStore("files").put({ file, data }, `${this.scope}:${file.id}`);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () =>
+          reject(tx.error || new Error("file storage aborted"));
+      });
+      this.notify();
+    } finally {
+      db.close();
     }
-    async mark(messageId: string, receiverId: string, status: MessageStatus) {
-        const rows = this.read();
-        for (const row of rows)
-            if (row.message.messageId === messageId &&
-                row.message.receiverId === receiverId)
-                row.status = status;
-        this.write(rows);
-    }
-    async has(messageId: string, senderId: string) {
-        return this.seen().has(`${senderId}:${messageId}`) || this.read().some((r) => r.message.messageId === messageId && r.message.senderId === senderId);
-    }
-    async list() {
-        return orderMessages(this.read());
-    }
-    async listDirect(peerId: string) {
-        const currentPeerId = peerIdSchema.parse(this.scope);
-        const otherPeerId = peerIdSchema.parse(peerId);
-        if (currentPeerId === otherPeerId)
-            throw new Error("direct conversation requires another peer");
-        return orderMessages(this.read()
-            .filter((row) => isDirectMessageBetween(row.message, currentPeerId, otherPeerId)));
-    }
-    async listDirectAttachments(peerId: string) {
-        return (await this.listDirect(peerId)).filter((row) => row.message.type === "attachment");
-    }
-    async deleteDirect(peerId: string) {
-        const currentPeerId = peerIdSchema.parse(this.scope);
-        const otherPeerId = peerIdSchema.parse(peerId);
-        if (currentPeerId === otherPeerId)
-            throw new Error("direct conversation requires another peer");
-        const rows = this.read(), deleted = new Set<string>(JSON.parse(localStorage.getItem(`${this.key}-deleted`) || '[]'));
-        for (const row of rows) if (isDirectMessageBetween(row.message, currentPeerId, otherPeerId)) deleted.add(rowId(row));
-        localStorage.setItem(`${this.key}-deleted`, JSON.stringify([...deleted].slice(-10000)));
-        const previousCalls = this.listCalls();
-        for (const call of previousCalls) if (call.peerId === otherPeerId) deleted.add('call:' + call.id);
-        localStorage.setItem(`${this.key}-deleted`, JSON.stringify([...deleted].slice(-10000)));
-        const calls = previousCalls.filter(call => call.peerId !== otherPeerId);
-        localStorage.setItem(`${this.key}-calls`, JSON.stringify(calls));
-        this.write(rows.filter((row) => !isDirectMessageBetween(row.message, currentPeerId, otherPeerId)));
-    }
-    async setDirectBlocked(peerId: string, blocked: boolean) {
-        const otherPeerId = peerIdSchema.parse(peerId);
-        if (otherPeerId === peerIdSchema.parse(this.scope))
-            throw new Error("cannot block yourself");
-        const rows = new Set<string>(JSON.parse(localStorage.getItem(this.blockedKey) || "[]") as string[]);
-        if (blocked)
-            rows.add(otherPeerId);
-        else
-            rows.delete(otherPeerId);
-        localStorage.setItem(this.blockedKey, JSON.stringify([...rows].sort()));
-        const edits = JSON.parse(localStorage.getItem(`${this.blockedKey}-edits`) || '{}');
-        Object.defineProperty(edits, otherPeerId, { value: { blocked, at: Math.max(Date.now(), (edits[otherPeerId]?.at || 0) + 1) }, enumerable: true, configurable: true, writable: true });
-        localStorage.setItem(`${this.blockedKey}-edits`, JSON.stringify(edits));
-        this.notify();
-    }
-    async isDirectBlocked(peerId: string) {
-        return (await this.listDirectBlocked()).includes(peerIdSchema.parse(peerId));
-    }
-    async listDirectBlocked() {
-        try {
-            const rows = JSON.parse(localStorage.getItem(this.blockedKey) || "[]") as unknown;
-            return Array.isArray(rows)
-                ? rows.filter((row): row is string => peerIdSchema.safeParse(row).success)
-                : [];
-        }
-        catch {
-            return [];
-        }
-    }
-    async saveDirectContact(contact: DirectChatContact) {
-        const operation = this.contactWrites.then(() => this.saveContact(contact));
-        this.contactWrites = operation.catch(() => { });
-        return operation;
-    }
-    private async saveContact(contact: DirectChatContact) {
-        const peerId = peerIdSchema.parse(contact.peerId);
-        if (peerId === peerIdSchema.parse(this.scope))
-            throw new Error("cannot save yourself");
-        const contacts = await this.listDirectContacts();
-        const next = [contact, ...contacts.filter((row) => row.peerId !== peerId)];
-        localStorage.setItem(this.contactKey, JSON.stringify(next.slice(0, 500)));
-        this.notify();
-    }
-    async listDirectContacts(): Promise<DirectChatContact[]> {
-        try {
-            const rows = JSON.parse(localStorage.getItem(this.contactKey) || "[]") as DirectChatContact[];
-            return Array.isArray(rows)
-                ? rows
-                    .filter((row) => peerIdSchema.safeParse(row.peerId).success &&
-                    typeof row.name === "string" &&
-                    typeof row.email === "string" &&
-                    Number.isSafeInteger(row.updatedAt))
-                    .sort((left, right) => right.updatedAt - left.updatedAt)
-                : [];
-        }
-        catch {
-            return [];
-        }
-    }
-    async removeDirectContact(peerId: string) {
-        const otherPeerId = peerIdSchema.parse(peerId);
-        localStorage.setItem(this.contactKey, JSON.stringify((await this.listDirectContacts()).filter((contact) => contact.peerId !== otherPeerId)));
-        this.notify();
-    }
-    private seen(): Set<string> {
-        try {
-            const value: unknown = JSON.parse(localStorage.getItem(`${this.key}-seen`) || '[]');
-            return new Set(Array.isArray(value) ? value.filter(item => typeof item === 'string') : []);
-        }
-        catch {
-            return new Set();
-        }
-    }
-    listCalls(): CallRecord[] {
-        return callRecordSchema.array().parse(JSON.parse(localStorage.getItem(`${this.key}-calls`) || '[]'));
-    }
-    putCall(input: CallRecord) {
-        const record = callRecordSchema.parse(input), records = this.listCalls(), index = records.findIndex(call => call.id === record.id);
-        if (index >= 0 && JSON.stringify(records[index]) === JSON.stringify(record)) return false;
-        if (index >= 0) records[index] = record; else records.push(record);
-        localStorage.setItem(`${this.key}-calls`, JSON.stringify(records.sort((a, b) => a.startedAt - b.startedAt).slice(-1000)));
-        this.notify(); return true;
-    }
-    recoverCalls() {
-        const records = recoverCallRecords(this.listCalls());
-        for (const record of records) this.putCall(record);
-    }
-    private async files(): Promise<IDBDatabase> {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open('ds01-files-v1', 1);
-            request.onupgradeneeded = () => request.result.createObjectStore('files');
-            request.onerror = () => reject(request.error);
-            request.onsuccess = () => resolve(request.result);
-        });
-    }
-    private async security(key: string, value?: unknown): Promise<unknown> {
-        const db = await new Promise<IDBDatabase>((resolve, reject) => {
-            const request = indexedDB.open('ds01-security-v1', 1);
-            request.onupgradeneeded = () => request.result.createObjectStore('keys');
-            request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
-        });
-        try {
-            return await new Promise((resolve, reject) => {
-                const tx = db.transaction('keys', value === undefined ? 'readonly' : 'readwrite'), store = tx.objectStore('keys');
-                const request = value === undefined ? store.get(`${this.scope}:${key}`) : store.put(value, `${this.scope}:${key}`);
-                let result: unknown;
-                request.onsuccess = () => { result = request.result; };
-                tx.oncomplete = () => resolve(result); tx.onerror = () => reject(tx.error); tx.onabort = () => reject(tx.error || Error('security key storage failed'));
-            });
-        } finally { db.close(); }
-    }
-    async getIdentity() { return await this.security('identity') as DeviceIdentity | undefined; }
-    async putIdentity(value: DeviceIdentity) { await this.security('identity', value); }
-    async getAccountKeys() { return await this.security('account-keys') as { vaultId: string; key: CryptoKey } | undefined; }
-    async putAccountKeys(vaultId: string, key: CryptoKey) { await this.security('account-keys', { vaultId, key }); }
-    async getPin(peerId: string) { const value = await this.security(`pin:${peerId}`); return value ? publicIdentitySchema.parse(value) : undefined; }
-    async putPin(peerId: string, value: PublicIdentity) { await this.security(`pin:${peerId}`, publicIdentitySchema.parse(value)); }
-    async putFile(file: ChatAttachment, data: Uint8Array): Promise<void> {
-        const db = await this.files();
-        try {
-            await new Promise<void>((resolve, reject) => {
-                const tx = db.transaction('files', 'readwrite');
-                tx.objectStore('files').put({ file, data }, `${this.scope}:${file.id}`);
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-                tx.onabort = () => reject(tx.error || new Error('file storage aborted'));
-            });
-            this.notify();
-        }
-        finally {
-            db.close();
-        }
-    }
-    async getFile(fileId: string): Promise<{
+  }
+  async getFile(fileId: string): Promise<
+    | {
         file: ChatAttachment;
         data: Uint8Array;
-    } | undefined> {
-        const db = await this.files();
-        try {
-            return await new Promise((resolve, reject) => {
-                const tx = db.transaction('files', 'readonly');
-                const request = tx.objectStore('files').get(`${this.scope}:${fileId}`);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            });
-        }
-        finally {
-            db.close();
-        }
+      }
+    | undefined
+  > {
+    const db = await this.files();
+    try {
+      return await new Promise((resolve, reject) => {
+        const tx = db.transaction("files", "readonly");
+        const request = tx.objectStore("files").get(`${this.scope}:${fileId}`);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    } finally {
+      db.close();
     }
-    async snapshot(attempt = 0): Promise<AccountSnapshot> {
-        await this.contactWrites;
-        const revision = this.revision;
-        let fileBudget = 8 * 1024 * 1024;
-        const rows = await this.list(), files: AccountSnapshot['files'] = [];
-        for (const id of new Set(rows.flatMap(row => row.message.attachments?.map(file => file.id) || []))) {
-            const saved = await this.getFile(id);
-            if (saved && saved.data.length <= fileBudget) { files.push({ file: saved.file, data: encodeBytes(saved.data) }); fileBudget -= saved.data.length; }
-        }
-        const pins: Record<string, PublicIdentity> = {};
-        for (const id of new Set(rows.flatMap(row => [row.message.senderId, row.message.receiverId]).filter(id => id !== this.scope))) {
-            const pin = await this.getPin(id);
-            if (pin) Object.defineProperty(pins, id, { value: pin, enumerable: true });
-        }
-        const snapshot = accountSnapshotSchema.parse({ v: 1, peerId: this.scope, rows, files, pins, calls: this.listCalls(), contacts: await this.listDirectContacts(), blocked: await this.listDirectBlocked(), blockEdits: JSON.parse(localStorage.getItem(`${this.blockedKey}-edits`) || '{}'),
-            deleted: JSON.parse(localStorage.getItem(`${this.key}-deleted`) || '[]'), seen: [...this.seen()], groupNames: JSON.parse(localStorage.getItem(`ds01-group-names-${this.scope}`) || '{}') });
-        if (revision !== this.revision) {
-            if (attempt >= 8) throw Error('Lịch sử đang thay đổi. Sẽ thử đồng bộ lại.');
-            return this.snapshot(attempt + 1);
-        }
-        return snapshot;
+  }
+  async snapshot(attempt = 0): Promise<AccountSnapshot> {
+    await this.contactWrites;
+    const revision = this.revision;
+    let fileBudget = 8 * 1024 * 1024;
+    const rows = await this.list(),
+      files: AccountSnapshot["files"] = [];
+    for (const id of new Set(
+      rows.flatMap(
+        (row) => row.message.attachments?.map((file) => file.id) || [],
+      ),
+    )) {
+      const saved = await this.getFile(id);
+      if (saved && saved.data.length <= fileBudget) {
+        files.push({ file: saved.file, data: encodeBytes(saved.data) });
+        fileBudget -= saved.data.length;
+      }
     }
-    async restore(input: unknown, cancelled = () => false) {
-        const remote = accountSnapshotSchema.parse(input), merged = mergeAccountSnapshots(await this.snapshot(), remote);
-        const files = merged.files.map(value => ({ ...value, bytes: decodeBytes(value.data) }));
-        for (const value of [...files, ...remote.files.map(value => ({ ...value, bytes: decodeBytes(value.data) }))]) {
-            if (value.bytes.length !== value.file.size) throw Error('Kích thước file đồng bộ không đúng.');
-            if (value.file.sha256) {
-                const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', value.bytes))].map(byte => byte.toString(16).padStart(2, '0')).join('');
-                if (hash !== value.file.sha256) throw Error('File đồng bộ không vượt qua kiểm tra SHA-256.');
-            }
-        }
-        if (cancelled()) return;
-        for (const value of files) { if (cancelled()) return; await this.putFile(value.file, value.bytes); }
-        for (const [peerId, pin] of Object.entries(merged.pins)) await this.putPin(peerId, pin);
-        const latest = mergeAccountSnapshots(await this.snapshot(), remote);
-        if (cancelled()) return;
-        const writes = [[`${this.key}-calls`, latest.calls], [this.contactKey, latest.contacts], [this.blockedKey, latest.blocked], [`${this.blockedKey}-edits`, latest.blockEdits],
-            [`${this.key}-deleted`, latest.deleted], [`${this.key}-seen`, latest.seen], [`ds01-group-names-${this.scope}`, latest.groupNames], [this.key, latest.rows]] as const;
-        const previous = writes.map(([key]) => [key, localStorage.getItem(key)] as const);
-        try { for (const [key, value] of writes) localStorage.setItem(key, JSON.stringify(value)); }
-        catch (error) {
-            for (const [key] of writes) localStorage.removeItem(key);
-            for (const [key, value] of previous) if (value !== null) localStorage.setItem(key, value);
-            throw error;
-        }
-        this.notify();
+    const pins: Record<string, PublicIdentity> = {};
+    for (const id of new Set(
+      rows
+        .flatMap((row) => [row.message.senderId, row.message.receiverId])
+        .filter((id) => id !== this.scope),
+    )) {
+      const pin = await this.getPin(id);
+      if (pin)
+        Object.defineProperty(pins, id, { value: pin, enumerable: true });
     }
+    const snapshot = accountSnapshotSchema.parse({
+      v: 1,
+      peerId: this.scope,
+      rows,
+      files,
+      pins,
+      calls: this.listCalls(),
+      contacts: await this.listDirectContacts(),
+      blocked: await this.listDirectBlocked(),
+      blockEdits: JSON.parse(
+        localStorage.getItem(`${this.blockedKey}-edits`) || "{}",
+      ),
+      deleted: JSON.parse(localStorage.getItem(`${this.key}-deleted`) || "[]"),
+      seen: [...this.seen()],
+      groupNames: JSON.parse(
+        localStorage.getItem(`ds01-group-names-${this.scope}`) || "{}",
+      ),
+    });
+    if (revision !== this.revision) {
+      if (attempt >= 8)
+        throw Error("Lịch sử đang thay đổi. Sẽ thử đồng bộ lại.");
+      return this.snapshot(attempt + 1);
+    }
+    return snapshot;
+  }
+  async restore(input: unknown, cancelled = () => false) {
+    const remote = accountSnapshotSchema.parse(input),
+      merged = mergeAccountSnapshots(await this.snapshot(), remote);
+    const files = merged.files.map((value) => ({
+      ...value,
+      bytes: decodeBytes(value.data),
+    }));
+    for (const value of [
+      ...files,
+      ...remote.files.map((value) => ({
+        ...value,
+        bytes: decodeBytes(value.data),
+      })),
+    ]) {
+      if (value.bytes.length !== value.file.size)
+        throw Error("Kích thước file đồng bộ không đúng.");
+      if (value.file.sha256) {
+        const hash = [
+          ...new Uint8Array(await crypto.subtle.digest("SHA-256", value.bytes)),
+        ]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
+        if (hash !== value.file.sha256)
+          throw Error("File đồng bộ không vượt qua kiểm tra SHA-256.");
+      }
+    }
+    if (cancelled()) return;
+    for (const value of files) {
+      if (cancelled()) return;
+      await this.putFile(value.file, value.bytes);
+    }
+    for (const [peerId, pin] of Object.entries(merged.pins))
+      await this.putPin(peerId, pin);
+    const latest = mergeAccountSnapshots(await this.snapshot(), remote);
+    if (cancelled()) return;
+    const writes = [
+      [`${this.key}-calls`, latest.calls],
+      [this.contactKey, latest.contacts],
+      [this.blockedKey, latest.blocked],
+      [`${this.blockedKey}-edits`, latest.blockEdits],
+      [`${this.key}-deleted`, latest.deleted],
+      [`${this.key}-seen`, latest.seen],
+      [`ds01-group-names-${this.scope}`, latest.groupNames],
+      [this.key, latest.rows],
+    ] as const;
+    const previous = writes.map(
+      ([key]) => [key, localStorage.getItem(key)] as const,
+    );
+    try {
+      for (const [key, value] of writes)
+        localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      for (const [key] of writes) localStorage.removeItem(key);
+      for (const [key, value] of previous)
+        if (value !== null) localStorage.setItem(key, value);
+      throw error;
+    }
+    this.notify();
+  }
 }

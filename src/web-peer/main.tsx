@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import "./style.css";
-import './panels.css';
-import './workspace.css';
+import "./panels.css";
+import "./workspace.css";
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -1,0 +1,19 @@
+{
+  "scope": "Malformed Socket.IO arguments against reviewer-owned local child processes only",
+  "observations": [
+    {
+      "service": "signaling",
+      "authenticated": false,
+      "argument": "third event argument is string instead of ACK function",
+      "exitCode": 1,
+      "log": "file:///F:/Downloads/DS01/src/signaling/.audit-run.mjs:147\r\n      return reply?.({ ok: false, error: \"invalid members\" });\r\n                    ^\r\n\r\nTypeError: reply is not a function\r\n    at Socket.<anonymous> (file:///F:/Downloads/DS01/src/signaling/.audit-run.mjs:147:21)\r\n    at Socket.emit (node:events:508:28)\r\n    at Socket.emitUntyped (F:\\Downloads\\DS01\\node_modules\\socket.io\\dist\\typed-events.js:69:22)\r\n    at F:\\Downloads\\DS01\\node_modules\\socket.io\\dist\\socket.js:693:39\r\n    at process.processTicksAndRejections (node:internal/process/task_queues:84:11)\r\n\r\nNode.js v25.2.1\r\n"
+    },
+    {
+      "service": "relay",
+      "authenticated": true,
+      "argument": "third event argument is string instead of ACK function",
+      "exitCode": 1,
+      "log": "[relay] REGISTER review-a\n[relay] REJECT review-a: receiver offline\nfile:///F:/Downloads/DS01/src/relay/.audit-run.mjs:171\r\n        reply?.({ ok: false, error: message });\r\n               ^\r\n\r\nTypeError: reply is not a function\r\n    at Socket.<anonymous> (file:///F:/Downloads/DS01/src/relay/.audit-run.mjs:171:16)\r\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\r\n\r\nNode.js v25.2.1\r\n"
+    }
+  ]
+}

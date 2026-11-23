@@ -376,11 +376,20 @@ export function useWebPeer() {
               setError(String(error));
             }
           }
-          if (event.kind === "mode" && event.peerId)
+          if (event.kind === "mode" && event.peerId) {
             setModes((current) => ({
               ...current,
               [event.peerId!]: event.mode!,
             }));
+            setDirectReasons((current) => ({
+              ...current,
+              [event.peerId!]: event.mode === "RELAY"
+                ? "Tin nhắn đang đi qua relay. Kênh trực tiếp chưa sẵn sàng hoặc đang phục hồi."
+                : event.mode === "TURN"
+                  ? "Đã thiết lập WebRTC qua TURN."
+                  : "Đã thiết lập đường DIRECT.",
+            }));
+          }
           if (event.kind === "message") void refresh();
           if (event.kind === "log") {
             log(`[${activeId}] ${event.text}`);
@@ -390,15 +399,7 @@ export function useWebPeer() {
               setDirectReasons((current) => ({
                 ...current,
                 [failed[1]]:
-                  "WebRTC chưa kết nối được trong thời gian chờ. Mạng hoặc VPN có thể chặn kết nối; relay đang duy trì cuộc trò chuyện.",
-              }));
-            const selected = text.match(
-              /ICE_SELECTED peer=([a-zA-Z0-9_-]+) mode=(DIRECT|TURN)/,
-            );
-            if (selected)
-              setDirectReasons((current) => ({
-                ...current,
-                [selected[1]]: "Đã thiết lập đường " + selected[2] + ".",
+                  "WebRTC chưa kết nối được trong thời gian chờ. Relay đang duy trì cuộc trò chuyện; xem log để xác định bước bị dừng.",
               }));
           }
           if (event.kind === "transfer" && event.transfer)
@@ -493,19 +494,7 @@ export function useWebPeer() {
       if (client.current?.media.isActive()) await client.current.media.end();
       if (client.current?.groupMedia.isActive())
         await client.current.groupMedia.leave();
-      if (sync.current) {
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await Promise.race([
-            sync.current.flush(),
-            new Promise<void>((resolve) => {
-              timer = setTimeout(resolve, 2000);
-            }),
-          ]);
-        } finally {
-          clearTimeout(timer);
-        }
-      }
+      await sync.current?.flush();
       if (accountRef.current)
         await authRequest(signalUrl, "auth:logout", {
           token: accountRef.current.token,
@@ -744,7 +733,7 @@ export function useWebPeer() {
   };
   const exportLogs = () =>
     saveDownload(
-      "ds01-peer-log.txt",
+      `ds01-peer-log-${peerId}-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`,
       new Blob([logs.slice().reverse().join("\n")], { type: "text/plain" }),
     );
   const disconnectDirect = () => {
@@ -757,11 +746,9 @@ export function useWebPeer() {
     toggleForceRelay(false);
     try {
       const ready = await client.current.retryDirect(target);
-      setDirectReasons((current) => ({
+      if (!ready) setDirectReasons((current) => ({
         ...current,
-        [target]: ready
-          ? "Đã thiết lập WebRTC trực tiếp."
-          : "WebRTC chưa kết nối được trong thời gian chờ. Kiểm tra VPN, tường lửa hoặc cấu hình TURN.",
+        [target]: "Kênh trực tiếp chưa sẵn sàng. Relay đang duy trì cuộc trò chuyện; xem log để biết quá trình kết nối.",
       }));
     } catch (error) {
       setError(String(error));

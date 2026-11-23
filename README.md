@@ -1,290 +1,249 @@
-# DS01: P2P chat system simulating Skype
+# DS01 P2P Chat
 
-Bài tập lớn môn **Hệ thống phân tán**, thực hiện bởi nhóm 3 thành viên.
+Repository độc lập cho bài tập Hệ thống phân tán DS01. Hệ thống gồm web peer, signaling server và application relay. Peer luôn thử WebRTC DataChannel trước; khi DIRECT không mở hoặc mất ACK, peer tự chuyển sang relay Socket.IO.
 
-Ứng dụng cho phép các peer nhắn tin, gửi file và gọi thoại/video qua Internet. Peer thử kết nối trực tiếp bằng WebRTC; nếu không kết nối được, dữ liệu được chuyển qua relay. Mã nguồn viết bằng TypeScript, giao diện web dùng React.
+Giao diện có chat cá nhân/nhóm, trạng thái từng receiver, retry cùng Message ID, chặn peer, file theo chunk có SHA-256 và lịch sử cục bộ. Các phần nâng cao gồm pool relay với failover và chọn theo RTT/tải, mailbox offline được sao chép, E2EE, discovery DHT, bầu super-peer có relay đồng hành và gọi thoại/video WebRTC. Xem bảng phạm vi và cách demo bên dưới.
 
-Hiện nhóm chạy demo bằng Node.js và Cloudflare Tunnel. Cấu hình Docker và workflow CD đã có trong repo; việc đưa hệ thống lên máy chủ thường trực nằm trong [hướng phát triển](#9-giới-hạn-và-hướng-phát-triển).
+## Thành phần
 
-## Mục lục
-
-1. [Thành viên và phân công](#1-thành-viên-và-phân-công)
-2. [Chức năng và kiến trúc](#2-chức-năng-và-kiến-trúc)
-3. [Đồng thời, chịu lỗi và bảo mật](#3-đồng-thời-chịu-lỗi-và-bảo-mật)
-4. [Cài đặt và chạy local](#4-cài-đặt-và-chạy-local)
-5. [Demo qua Internet](#5-demo-qua-internet)
-6. [Kịch bản demo](#6-kịch-bản-demo)
-7. [Kiểm thử và CI](#7-kiểm-thử-và-ci)
-8. [Mã nguồn và tài liệu](#8-mã-nguồn-và-tài-liệu)
-9. [Giới hạn và hướng phát triển](#9-giới-hạn-và-hướng-phát-triển)
-
-## 1. Thành viên và phân công
-
-| Thành viên | MSSV | Phần việc | Mã nguồn chính |
-| --- | --- | --- | --- |
-| **Trần Hoàng Nam** · `Namtran205` | **B23DCCE070** | B2: WebRTC, NAT, STUN/TURN và chuyển đường truyền; B4: giao thức, ACK/retry/dedup và ordering; N2: replication/mailbox; N3: bầu super-peer; N7: thoại/video; D1: triển khai và CI/CD | `src/shared/directTransport.ts`, `messageDelivery.ts`, `protocol.ts`, `media.ts`, `groupMedia.ts`; `src/relay/cluster.ts`, `journal.ts`; `deploy/`, `.github/` |
-| **Trịnh Thu Hồng** · `hong0110` | **B23DCVT180** | B1: signaling, discovery và tài khoản; B3: relay và định tuyến; N1: đa relay, lựa chọn và failover; N6: truyền file; N8: tải và đánh giá hiệu năng | `src/signaling/`, `src/server-kit/`, `src/relay/index.ts`, `src/shared/peer.ts`, `relaySelection.ts`, `fileTransfer.ts`; các script workload và test tương ứng |
-| **Nguyễn Chí Ngọc** · `Ngocnguyen055` | **B23DCCE073** | B5: chat nhóm và membership/OCC; B6: giao diện và lịch sử; N4: E2EE, quản lý khóa và đồng bộ tài khoản; N5: DHT; C3: biên tập báo cáo | `src/signaling/groupHandlers.ts`, `keyDirectory.ts`; `src/shared/secure.ts`, `overlayProtocol.ts`; `src/web-peer/`, `docs/report.*` |
-
-Cả ba cùng phân tích, tích hợp, kiểm thử và trình bày. Các file dùng chung như `peer.ts`, `useWebPeer.ts` và entry point của service có phần phối hợp giữa các thành viên.
-
-## 2. Chức năng và kiến trúc
-
-### Chức năng
-
-- Đăng ký, đăng nhập, tìm peer và cập nhật trạng thái online/offline.
-- Chat cá nhân, tạo nhóm, thêm/xóa thành viên và gửi tin cho cả nhóm.
-- Hiển thị đường truyền và trạng thái giao tin; lưu lịch sử trên thiết bị.
-- Gửi file cá nhân/nhóm tối đa **20 MiB**, chia chunk và kiểm SHA-256.
-- Gọi thoại/video cá nhân và nhóm tối đa **8 người**; mute, tắt camera và lưu lịch sử cuộc gọi.
-- Sao lưu lịch sử, khóa và một phần file dưới dạng mã hóa để khôi phục khi đổi thiết bị.
-
-Các phần mở rộng gồm nhiều relay, chọn relay theo độ trễ/tải, tự chuyển relay, sao chép trạng thái, lưu chuyển tiếp text/ACK cho peer offline, mã hóa đầu cuối, DHT và bầu super-peer. WebRTC hỗ trợ cấu hình STUN/TURN; máy chủ TURN được cấu hình riêng. Chi tiết tại [advanced-features.md](docs/advanced-features.md).
-
-### Các thành phần
-
-```mermaid
-flowchart LR
-    A[Peer A] <-->|WebRTC| B[Peer B]
-    B <-->|WebRTC| C[Peer C]
-    A <-->|Đăng ký, discovery, SDP/ICE| S[Signaling]
-    B <--> S
-    C <--> S
-    A <-->|Socket.IO| R1[Relay chính]
-    B <--> R1
-    C <-->|Socket.IO| R2[Relay dự phòng]
-    R1 <-->|HTTP replication| R2
+```text
+src/
+├── web-peer/       Giao diện peer, log và localStorage
+├── shared/         Protocol, PeerClient, WebRTC, ACK/retry/dedup
+├── signaling/      Registration, discovery, heartbeat, SDP/ICE, nhóm
+└── relay/          Xác thực, ánh xạ Peer ID và chuyển tiếp RELAY
 ```
 
-| Thành phần | Cổng mặc định | Vai trò |
-| --- | --- | --- |
-| Signaling | `4001` | Tài khoản, discovery, heartbeat, trao đổi SDP/ICE, nhóm và phòng gọi |
-| Relay chính | `4002` | Chuyển dữ liệu đến đúng peer, mailbox offline và media relay |
-| Relay dự phòng | `4003` | Nhận lưu lượng khi peer chuyển relay; giữ bản sao trạng thái riêng |
-| Web peer | `5173` khi chạy Vite | Giao diện, WebRTC, mã hóa và lịch sử cục bộ |
+- Signaling chạy độc lập ở cổng `4001`: registration, discovery, SDP/ICE, nhóm và xác thực. Cùng tiến trình có API sao lưu tài khoản `/account/vault`, `/account/backup`; API này lưu bản sao mã hóa do chủ tài khoản gửi lên, không chuyển tin nhắn tới peer khác.
+- Relay chạy độc lập ở cổng `4002` và chỉ chuyển chat envelope khi mode là `RELAY`.
+- Web peer chạy ở cổng Vite mặc định `5173`.
+- Lịch sử web lưu trong localStorage theo Peer ID, file và khóa hoạt động trong IndexedDB. Chế độ tài khoản có thêm bản sao mã hóa để khôi phục trên thiết bị hoặc địa chỉ web mới; chế độ Peer ID/DHT giữ dữ liệu tại thiết bị.
+- Demo với ID `peer-a`, `peer-b`, `peer-c` không cần MongoDB hoặc Mobile API.
 
-Launcher demo tự chọn cổng trống và in URL thực tế. Signaling và hai relay chạy thành các tiến trình riêng. Relay trao đổi trạng thái qua mạng, không dùng chung file state.
+## Yêu cầu
 
-Signaling xử lý thông tin điều khiển, không chuyển tiếp tin chat trực tiếp giữa các peer. API sao lưu tài khoản lưu bản mã do client gửi lên.
+- Node.js `^20.19.0 || >=22.12.0`; dùng Node 22.12+ để chạy cả browser QA.
+- npm.
+- Chrome, Edge hoặc Firefox có WebRTC.
 
-### Đường truyền
-
-| Nhãn | Đường đi |
-| --- | --- |
-| **DIRECT** | WebRTC giữa hai peer, không qua relay |
-| **TURN** | WebRTC qua máy chủ TURN khi ICE chọn candidate loại `relay` |
-| **RELAY** | Dữ liệu đi qua application relay bằng Socket.IO |
-
-Peer nguồn tìm peer đích, trao đổi SDP/ICE rồi thử DataChannel. Thời gian chờ trực tiếp mặc định là **10 giây**; kết nối lỗi có thể chuyển relay sớm hơn. Cuộc gọi có cơ chế media relay sau khoảng **8 giây** nếu WebRTC không kết nối được sau khi nhận cuộc gọi. Với gọi nhóm, đường truyền được xác định riêng cho từng cặp.
-
-Cloudflare Tunnel cung cấp URL HTTPS cho web và service. STUN/TURN phục vụ việc thiết lập WebRTC; cấu hình bằng `VITE_ICE_SERVERS`.
-
-Mã nguồn: [directTransport.ts](src/shared/directTransport.ts), [iceRoute.ts](src/shared/iceRoute.ts), [media.ts](src/shared/media.ts), [relayMedia.ts](src/shared/relayMedia.ts).
-
-## 3. Đồng thời, chịu lỗi và bảo mật
-
-### Đồng thời và nhất quán
-
-| Tình huống | Cách xử lý |
-| --- | --- |
-| Nhiều peer gửi cùng lúc | Sequence theo sender/session, Lamport và quy tắc sắp xếp xác định |
-| Retry hoặc nhận cùng tin qua nhiều đường | Giữ Message ID, kiểm tra nội dung sự kiện và loại bản trùng |
-| Gửi nhóm | Theo dõi ACK riêng từng người; chỉ retry người chưa xác nhận |
-| Hai thay đổi thành viên cùng version | OCC: một yêu cầu thành công, yêu cầu còn lại nhận lỗi version cũ |
-| Hai bản sao lưu cùng version | Báo conflict, merge và thử lại có giới hạn |
-| Replica đến trễ sau khi mail đã xóa | Version, Lamport và tombstone ngăn khôi phục mail cũ |
-
-Lịch sử chat hội tụ khi các peer nhận cùng tập sự kiện hợp lệ. Danh sách thành viên nhóm do signaling quyết định và phân phối theo version.
-
-Hệ thống dùng ACK tầng ứng dụng, retry có giới hạn và dedup. Mỗi lần gửi thử tối đa **3 lần tổng cộng**, giữ nguyên Message ID. Trạng thái **Đã chuyển tiếp** hoặc **Relay đã lưu** chưa có nghĩa peer đích đã nhận; **Đã nhận** cần ACK từ peer đích. Hết lượt thử được hiển thị là **Chưa xác nhận**.
-
-Mã nguồn: [protocol.ts](src/shared/protocol.ts), [messageDelivery.ts](src/shared/messageDelivery.ts), [ordering.ts](src/shared/ordering.ts), [groupHandlers.ts](src/signaling/groupHandlers.ts).
-
-### Chịu lỗi
-
-Peer gửi heartbeat mỗi **10 giây**. Thông tin hết hạn sau **30 giây** không có heartbeat hợp lệ, được quét mỗi **5 giây**; socket disconnect có thể được phát hiện sớm hơn.
-
-Khi DataChannel hỏng, peer chuyển sang relay. Khi relay không phản hồi, client thử relay khác. Mailbox giữ text/ACK cho peer offline khi được bật; ACK từ peer nhận mới xác nhận giao tin thành công. Tài khoản, nhóm và snapshot riêng của từng relay được lưu để phục hồi sau restart.
-
-Replication giữa relay là bất đồng bộ, nên có thể mất dữ liệu nếu relay dừng trước khi kịp sao chép.
-
-### Bảo mật
-
-Mật khẩu được băm bằng scrypt với salt ngẫu nhiên. Phiên có thể thu hồi; Peer ID được ràng buộc với phiên/socket. Server kiểm tra quyền, schema, kích thước và tần suất yêu cầu. Chat tối đa **4.000 ký tự**, đồng thời chịu giới hạn byte của envelope.
-
-Chat/file/ACK dùng E2EE; bản sao tài khoản được mã hóa bằng khóa dẫn xuất từ mật khẩu. Relay vẫn thấy metadata định tuyến. Secret server đặt trong `.env`; các biến `VITE_*` nằm trong bundle trình duyệt nên chỉ chứa cấu hình phía client.
-
-## 4. Cài đặt và chạy local
-
-Cần **Node.js 22.12+**, npm và trình duyệt có WebRTC/IndexedDB. Gọi thoại/video cần quyền mic/camera; dùng localhost hoặc HTTPS.
-
-Các ví dụ dùng PowerShell. Trên Linux/macOS, thay `npm.cmd` bằng `npm`.
+## Cài đặt
 
 ```powershell
 git clone https://github.com/Ngocnguyen055/DS01.git
 cd DS01
-npm.cmd ci --cache .npm-cache
+npm.cmd ci
 npm.cmd run setup:env
+```
+
+Không commit `.env`. `setup:env` tạo hai secret ngẫu nhiên riêng, giữ nguyên secret hợp lệ đã cấu hình. Signaling và relay yêu cầu secret tối thiểu 32 ký tự; signaling từ chối dùng chung `JWT_SECRET` và `PEER_SECRET`. Các URL local mặc định đã trỏ tới localhost.
+
+## Chạy local
+
+Có thể khởi động toàn bộ bản local bằng một lệnh:
+
+```powershell
 npm.cmd run demo:local
 ```
 
-`setup:env` tạo `.env` và sinh hai secret riêng nếu cần, giữ nguyên secret thật đã có. Mẫu cấu hình ở [.env.example](.env.example). Launcher chạy signaling, hai relay, web và dashboard. Mở URL **Web** được in trong terminal.
+Lệnh in URL web và dashboard, chạy signaling cùng hai relay thành các tiến trình riêng. Đây là bản localhost; dùng `demo:public` ở phần dưới để mở từ thiết bị khác qua Internet. Chạy lại cùng lệnh khi demo đang hoạt động sẽ in lại URL của phiên hiện tại. Muốn đổi giữa local và public, nhấn Ctrl+C ở terminal đang chạy trước.
 
-Tạo ba tài khoản, ví dụ `alice`, `bob`, `carol`, mật khẩu tối thiểu 10 ký tự. Peer ID tương ứng là `user_alice`, `user_bob`, `user_carol`. Dùng ba browser profile riêng để tránh dùng chung dữ liệu phiên. Mỗi tài khoản có một peer online; khi đổi thiết bị, chọn **Chuyển phiên sang thiết bị này**.
+Local, public và lệnh chạy riêng từng service dùng chung `../DS01-runtime/data/`. Với checkout `F:\Downloads\DS01`, đây là `F:\Downloads\DS01-runtime\data`; không dùng ổ C cho dữ liệu demo. `DS01_RUNTIME_DIR` đổi thư mục runtime; `DS01_DATA_DIR` tùy chọn đổi riêng nơi lưu dữ liệu lâu dài.
 
-Dashboard mở trên máy chạy service, dùng để xem PID, trạng thái và log. **Ctrl+C** dừng phiên demo.
+| Vị trí                                                 | Dữ liệu                                                                    |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `data/accounts.json`                                   | Tài khoản, hash mật khẩu, phiên đăng nhập                                  |
+| `data/signaling.json`, `data/signaling.json.keys.json` | Nhóm, đăng ký kỹ thuật, khóa công khai                                     |
+| `data/account-data/`                                   | Khóa khôi phục được mã hóa bằng mật khẩu và bản sao lịch sử/file có mã hóa |
+| `data/relay-primary.json`, `data/relay-backup.json`    | Mailbox và trạng thái từng relay                                           |
+| `data/service-secrets.json`                            | Secret demo được giữ qua lần chạy nếu chưa cấu hình trong `.env`           |
+| `ds01-public-demo-*/`                                  | Bản build, log và thông tin của mỗi lần chạy; không phải kho tài khoản     |
+| `tmp/`, `browser-*/`                                   | Bundle tạm và kiểm thử tách biệt dữ liệu thật                              |
 
-Khi cần chạy từng thành phần để sửa code, mở ba terminal:
+Lần chạy đầu tự nhập tài khoản/nhóm từ `.data` cũ và các phiên public cũ, giữ nguyên hash mật khẩu. File gốc được giữ, có thêm bản sao trong `data/migration-backup/`; không cần tạo lại tài khoản. Khi trùng username nhưng khác mật khẩu, dữ liệu canonical hoặc local cũ được ưu tiên và console liệt kê tên cần kiểm tra. Không xóa `data/` khi dọn log; sao lưu cả thư mục này trước khi chuyển máy chủ. `demo:check` và `demo:public:check` sử dụng kho kiểm tra riêng.
 
-| Thành phần | Lệnh |
-| --- | --- |
-| Signaling | `npm.cmd run dev:signaling` |
-| Một relay | `npm.cmd run dev:relay` |
-| Web | `npm.cmd run dev:web` |
+Khi cần chạy riêng từng thành phần để phát triển, mở ba terminal tại thư mục repository.
 
-Web Vite ở `http://localhost:5173`. Lệnh `dev:web` chỉ chạy giao diện; dùng launcher nếu cần sẵn hai relay và dashboard.
+Terminal 1:
 
-## 5. Demo qua Internet
+```powershell
+npm.cmd run dev:signaling
+```
 
-Tải [cloudflared](https://developers.cloudflare.com/tunnel/downloads/) và cài vào PATH, hoặc đặt bản Windows tại `../DS01-runtime/tools/cloudflared.exe`. Sau đó chạy:
+Terminal 2:
+
+```powershell
+npm.cmd run dev:relay
+```
+
+Terminal 3:
+
+```powershell
+npm.cmd run dev:web
+```
+
+Mở `http://localhost:5173` bằng ba browser profile riêng. Chọn **Tạo tài khoản**, tạo `alice`, `bob`, `carol` với tên hiển thị và mật khẩu tối thiểu 10 ký tự. Sau đó đăng nhập: ứng dụng tự đăng ký peer, kết nối và đưa vào chat. Peer ID lần lượt là `user_alice`, `user_bob`, `user_carol`.
+
+F5 trong cùng tab tự khôi phục phiên. Nút **Đăng xuất** thu hồi phiên và đóng kết nối. Mỗi tài khoản có tối đa một peer online; khi chuyển máy, chọn **Chuyển phiên sang thiết bị này** để đăng xuất phiên cũ sau khi xác thực mật khẩu. Đăng nhập bằng cùng mật khẩu sẽ mở lại cùng khóa E2EE và tải bản sao lịch sử/file gần nhất. Trong **Tình trạng kết nối → Kết nối nâng cao**, chờ **Đã đồng bộ** trước khi chuyển máy hoặc có thể bấm **Đồng bộ ngay**. Mất mạng sao lưu không xóa dữ liệu cục bộ; ứng dụng hiển thị **Chờ đồng bộ** và thử lại có giãn thời gian.
+
+Với tài khoản từ phiên bản cũ, khóa cũ không xuất được. Đăng nhập tại profile/URL cũ giúp ký xác nhận chuyển khóa; nếu không còn truy cập được thì cần xác nhận tạo khóa khôi phục một lần và peer liên hệ phải đối chiếu khóa khi được yêu cầu. Lịch sử chưa từng sao lưu vẫn ở origin/profile cũ: xuất JSON ở đó và chọn **Nhập lịch sử từ phiên bản cũ** tại giao diện mới. Không thể tự lấy dữ liệu chưa sao lưu từ một địa chỉ web khác.
+
+Hướng dẫn, thiết kế, giới hạn và 12 ca kiểm thử: [docs/authentication.md](docs/authentication.md).
+
+Các kịch bản bên dưới dùng ID demo `peer-a/peer-b/peer-c`: chọn **Chế độ thử nghiệm** ở cuối biểu mẫu để kết nối bằng Peer ID hoặc mở lịch sử demo cũ. Với tài khoản, thay các ID đó bằng Peer ID thực tế `user_...`. Log và checkbox relay nằm trong **Tình trạng kết nối**; quản lý nhóm trong **Thông tin hội thoại**.
+
+## Demo nhanh
 
 ```powershell
 npm.cmd run demo:public
 ```
 
-Nếu lưu công cụ ở vị trí khác:
+Lệnh khởi động signaling, relay chính và relay dự phòng thành các tiến trình riêng, mở bốn URL HTTPS tạm và in thêm **Dashboard (this computer only)**. Mở dashboard bằng trình duyệt trên máy server để xem URL, PID và log cả hai relay; lọc theo Message ID, không cần lệnh xem process hay cổng. Web bật E2EE và chọn relay theo RTT/tải. Hai relay trao đổi snapshot qua HTTP có xác thực; mỗi relay có file state riêng trong `../DS01-runtime/`. Ctrl+C dừng phiên và các URL tạm.
+
+Khi một relay hoặc tunnel của relay bị dừng sau khởi tạo, script giữ web, signaling và relay còn lại chạy để peer có thể chuyển đường truyền. Lần gửi chờ DIRECT tối đa 10 giây rồi dùng RELAY; ICE được tiếp tục thử nền trong tổng thời gian tối đa 30 giây và có thể chuyển các tin tiếp theo về DIRECT khi kết nối mở. Lỗi chắc chắn hoặc đóng DataChannel chuyển RELAY sớm hơn. Kênh đã mở được giữ lại khi truy vấn signaling chỉ bị timeout; phản hồi từ chối quyền vẫn được xử lý riêng. Khi DataChannel mở, peer đợi thống kê ICE sẵn sàng rồi xác định DIRECT hoặc TURN từ cặp candidate thực sự được chọn. Nếu kênh từng hoạt động bị gián đoạn, peer dùng relay trong lúc chờ 1,5 giây, thử ICE restart một lần và giới hạn phục hồi 15 giây. Nút ngắt kênh trực tiếp vẫn đóng thật và không tự phục hồi trong lần thử đó.
+
+Đối chiếu 12 bước bắt buộc của mục 5.10:
+
+1. Đợi kiểm tra public endpoint hoàn tất. Tunnel làm các service trên máy chạy demo truy cập được qua Internet; URL chỉ sống trong phiên. Nếu dùng server/domain thường trực, xem cấu hình `deploy/`.
+2. Mở URL **Web** trên ba thiết bị hoặc ba browser profile riêng, đăng nhập A/B/C. Tiêu đề tab hiển thị tên và Peer ID để nhận diện trong trình quản lý tác vụ của trình duyệt.
+3. Xác nhận A/B/C xuất hiện online với đúng tên và ID.
+4. A/B ở mạng cho phép WebRTC trực tiếp: tắt ưu tiên relay, A chọn B rồi gửi; chờ nhãn `DIRECT` và xác nhận đã nhận.
+5. Mở **Tình trạng kết nối** ở A và B: lấy `DIRECT SEND`/`DIRECT RECEIVE` cùng Message ID. Trong dashboard lọc ID đó, xác nhận relay đang chạy, không có `FORWARD`; `/health` cũng có bộ đếm chuyển tiếp.
+6. Cho C dùng 4G, A dùng Wi-Fi; giữ ưu tiên relay tắt. Cần quan sát DIRECT thất bại hoặc timeout rồi tin vẫn đến bằng RELAY. Khác mạng vẫn có thể kết nối DIRECT; nếu vậy chưa chứng minh trường hợp bị chặn. Cần mạng/firewall thực sự chặn đường trực tiếp hoặc VM/Docker network cô lập. Checkbox ưu tiên relay chỉ kiểm tra đường RELAY, không chứng minh NAT.
+7. Đối chiếu `RELAY SEND` tại nguồn, `[relay] FORWARD` trong dashboard và `RELAY RECEIVE` tại đích với cùng Message ID; xuất log peer và giữ log server của phiên.
+8. Tạo nhóm gồm A/B/C, mỗi người gửi ít nhất một tin và xác nhận các thành viên nhận đủ.
+9. B/C gửi gần như đồng thời; kiểm tra A/B/C đều có đủ hai tin, không trùng; log có timestamp và ID để đối chiếu.
+10. Trên Chrome của C mở trình quản lý tác vụ bằng **Shift+Esc**, chọn renderer/tab có Peer ID C rồi **Kết thúc quy trình**. Không bấm Đăng xuất. A/B phải cập nhật C offline; giữ log DISCONNECT/TIMEOUT. Dùng profile riêng để lỗi renderer C không làm dừng A/B.
+11. Khi A/B đang DIRECT, A mở **Tình trạng kết nối** → **Ngắt kênh trực tiếp với B**. Thao tác đóng PeerConnection/DataChannel thật của A–B, giữ signaling/relay và các peer khác hoạt động. Để ưu tiên relay tắt rồi gửi tin tiếp: hệ thống tự fallback sang RELAY; đối chiếu log hai peer và server. Đây là kiểm tra lỗi đường trực tiếp, không phải bằng chứng NAT của bước 6.
+12. Tải lại tab đã crash bằng cùng profile/thiết bị. Phiên còn hạn phải khôi phục đúng Peer ID, lịch sử cục bộ và nhóm; A/B thấy peer online lại. Nếu đã đóng tab làm mất sessionStorage thì đăng nhập lại cùng tài khoản. Để thử đổi thiết bị/profile, đợi đồng bộ xong, đăng nhập cùng tài khoản và mật khẩu tại profile mới rồi chọn chuyển phiên nếu phiên cũ vẫn online; kiểm tra lịch sử và tải file đã nhận.
+
+Để kiểm tra tự động URL public rồi dừng toàn bộ dịch vụ/tunnel:
 
 ```powershell
-$env:CLOUDFLARED_PATH = 'F:\Tools\cloudflared.exe'
-npm.cmd run demo:public
+npm.cmd run demo:public:check
 ```
 
-Chờ kiểm tra khởi động hoàn tất rồi gửi cùng URL **Web** cho các thiết bị. Có thể dùng laptop Wi-Fi, điện thoại 4G/5G và thiết bị thứ ba. Người tham gia chỉ cần trình duyệt; máy chạy service phải giữ kết nối mạng và terminal hoạt động.
+Lệnh này xác nhận endpoint và Socket.IO qua HTTPS public, chưa chứng minh ba mạng, NAT hay DIRECT. Tránh gán kết quả local hoặc checkbox relay thành bằng chứng WAN.
 
-Người clone có thể tự tạo phiên demo và URL riêng. Phiên đó dùng backend và tài khoản trên máy của họ. Không đưa `.env`, token, dữ liệu chạy hoặc cloudflared lên Git; URL tunnel thay đổi theo phiên.
-
-Sau khi đổi mã nguồn hoặc cấu hình ICE, dừng phiên cũ, chạy lại và mở URL mới trên các thiết bị. DIRECT có thiết lập được hay không phụ thuộc NAT, VPN và firewall; xem nhãn đường truyền và log thực tế.
-
-### Dữ liệu
-
-Với checkout `F:\Downloads\DS01`, dữ liệu chạy mặc định ở `F:\Downloads\DS01-runtime`. Có thể đổi bằng `DS01_RUNTIME_DIR` và `DS01_DATA_DIR`.
-
-| Nơi lưu | Nội dung |
-| --- | --- |
-| `DS01-runtime/data/` | Tài khoản, hash mật khẩu, nhóm, vault và bản sao tài khoản mã hóa, state của từng relay |
-| `ds01-public-demo-*/`, `browser-*/`, `evaluation-*/` trong runtime | Build, log và kết quả kiểm thử |
-| localStorage/IndexedDB | Lịch sử, file, khóa và receipt trên thiết bị người dùng |
-
-Local/public dùng chung kho mặc định; các bài kiểm thử dùng kho riêng. Khi dọn log, giữ thư mục `data/` và secret đang dùng.
-
-Để đổi thiết bị, đợi **Tình trạng kết nối → Kết nối nâng cao → Đã đồng bộ**, rồi đăng nhập cùng tài khoản và mật khẩu. Dữ liệu chưa sao lưu vẫn ở thiết bị cũ. Chi tiết tại [authentication.md](docs/authentication.md).
-
-## 6. Kịch bản demo
-
-Chạy `demo:public`, mở dashboard trên máy vận hành và đăng nhập A/B/C. Trong giao diện, mở **Tình trạng kết nối** để xem/xuất log; bấm **Chi tiết** của tin nhắn để đối chiếu Message ID, Session, Sequence và Lamport.
-
-| Bước | Thao tác | Kết quả cần thấy |
-| --- | --- | --- |
-| 1 | Mở URL HTTPS của web và `/health` của signaling/relay từ thiết bị khác mạng | Các endpoint phản hồi |
-| 2 | Đăng nhập A/B/C trên thiết bị hoặc profile riêng | Ba Peer ID khác nhau |
-| 3 | Cho C kết nối sau A/B | Các peer cập nhật danh sách online |
-| 4 | A gửi cho B khi đường trực tiếp thiết lập được | Tin có nhãn DIRECT và ACK |
-| 5 | Lọc Message ID ở peer và relay | Có log gửi/nhận DIRECT; relay không FORWARD tin đó |
-| 6 | Dùng hai mạng có đường trực tiếp bị chặn hoặc timeout | Tin tự chuyển RELAY |
-| 7 | Đối chiếu Message ID của tin RELAY | Log gửi ở A, FORWARD ở relay và nhận ở B |
-| 8 | Tạo nhóm A/B/C, mỗi người gửi một tin | Các thành viên nhận đủ, có ACK riêng từng người |
-| 9 | B/C gửi gần cùng lúc | Các peer nhận cùng tập tin, không trùng; giữ thứ tự theo sender |
-| 10 | Dùng Chrome Task Manager (`Shift+Esc`) kết thúc tab C | A/B thấy C offline qua disconnect hoặc timeout |
-| 11 | Khi A/B đang DIRECT, bấm **Ngắt kênh trực tiếp** rồi gửi tiếp | DataChannel đóng thật; tin sau tự chuyển RELAY |
-| 12 | Mở lại C bằng profile cũ | Khôi phục Peer ID, lịch sử và nhóm; C online trở lại |
-
-**Ưu tiên relay khi gửi tin** dùng để thử application relay. **Kiểm tra cuộc gọi qua relay** mô phỏng chặn ICE cho cuộc gọi mới; bật khi đã kết thúc cuộc gọi cũ. Hai tùy chọn này có phạm vi riêng. Khi chứng minh fallback do mạng, cần có log direct attempt thất bại/timeout.
-
-Để thử xung đột nhóm, cho A xóa C trong lúc B tự rời cùng một version. Một yêu cầu được chấp nhận; yêu cầu còn lại báo version cũ. Nếu thao tác UI đến lần lượt, cả hai có thể thành công ở hai version khác nhau. Test tự động tạo cuộc đua cùng version:
-
-```powershell
-npm.cmd test -- tests/services.test.ts tests/group-chat.test.ts tests/reliable-delivery.test.ts --reporter=verbose
-```
-
-Các phần nâng cao có thể demo thêm: dừng relay chính để chuyển backup; gửi text khi B offline rồi cho B trở lại; chuyển phiên sang thiết bị mới; gửi file; gọi cá nhân/nhóm; kết nối bằng DHT khi signaling dừng. Bầu super-peer cần relay đồng hành HTTPS public có owner trùng Peer ID.
-
-Hướng dẫn đầy đủ: [demo-script.md](docs/demo-script.md), [MANUAL-ACCEPTANCE.md](docs/MANUAL-ACCEPTANCE.md).
-
-## 7. Kiểm thử và CI
+## Kiểm tra tự động
 
 ```powershell
 npm.cmd run typecheck
 npm.cmd run lint
-npm.cmd run evaluate
+npm.cmd test
 npm.cmd run build:web
-```
-
-`evaluate` chạy Vitest và xuất ma trận kiểm thử theo mục 9 của đề: ít nhất 8 kiểm thử chức năng, 2 đồng thời/xung đột, 2 chịu lỗi/phục hồi và 2 bảo mật.
-
-Kiểm thử bằng Chrome/Chromium:
-
-```powershell
 npm.cmd run test:browser
-npm.cmd run test:browser:advanced
-npm.cmd run test:browser:groups
 npm.cmd run test:browser:accounts
 ```
 
-| Bộ kiểm thử | Nội dung |
-| --- | --- |
-| `test:browser` | Chat, ACK, đồng thời, lỗi/phục hồi, giao diện và tải 3–100 peer |
-| `test:browser:advanced` | STUN/TURN, E2EE, mailbox/replication, DHT và media |
-| `test:browser:groups` | Thoại/video nhóm, tham gia/rời, quyền thành viên và lịch sử |
-| `test:browser:accounts` | Khôi phục khóa, lịch sử/file, chuyển thiết bị và gián đoạn sao lưu |
+Bộ test kiểm tra protocol, ba peer, Peer ID trùng, heartbeat/discovery, group version conflict, relay routing, sender giả, body quá kích thước, ACK, retry, chống trùng và fallback bằng DataChannel mô phỏng không mở.
 
-Các bài media dùng thiết bị mic/camera giả trong Chrome. JSON, log và ảnh được lưu ở thư mục runtime được in khi chạy. Tài liệu bằng chứng: [docs/evidence/README.md](docs/evidence/README.md).
+Vitest kiểm tra protocol/integration/hồi quy. `test:browser` dùng ba browser context, WebRTC thật, file/IndexedDB, crash renderer peer, phá DIRECT, restart signaling và failover relay trên các process local riêng. Script in thư mục bằng chứng dưới `../DS01-runtime/browser-smoke-*`: ảnh, log server đầy đủ, `path-proof.json`, `mandatory-scenarios.json`, độ trễ và ma trận tải. Báo cáo ghi rõ kịch bản nào chỉ được kiểm chứng local và kịch bản Internet/NAT còn thiếu. Cần Chromium đã cài (có thể đặt `CHROME_PATH`); script chỉ dùng profile/dịch vụ tạm. Internet/NAT vẫn cần chạy trên hai mạng hoặc mạng mô phỏng cô lập theo đề và lưu bằng chứng riêng.
 
-Đo tải relay đang hoạt động:
+## Đo relay
+
+Khởi động signaling và relay rồi chạy:
 
 ```powershell
-npm.cmd run load:relay -- --peers 20 --messages 10 --concurrency 8 --signal http://localhost:4001 --relay http://localhost:4002
+npm.cmd run benchmark:relay
 ```
 
-Thay URL bằng endpoint thực tế của phiên đang chạy. Kết quả gồm latency, throughput, tỷ lệ giao, bản trùng và sai đích. [test-plan.md](docs/test-plan.md) và [manual-results.csv](docs/manual-results.csv) lưu kế hoạch/kết quả đánh giá.
+Script gửi 100 envelope RELAY tuần tự và in `p50`, `p95`, `max`. Ghi rõ máy, mạng, ngày giờ và commit khi dùng kết quả trong báo cáo.
 
-[DS01 CI](.github/workflows/ci.yml) tự chạy khi push hoặc tạo pull request: typecheck, lint, test, build web, audit dependency, bốn bộ Chrome và build Docker image. Xem kết quả từng bước và tải artifact ở **GitHub → Actions**.
+Đo tải nhiều peer: `npm.cmd run load:relay -- --peers 20 --messages 10 --concurrency 8`. Phép đo headless này không đo ACK ứng dụng hoặc WebRTC; xem [advanced-features.md](docs/advanced-features.md).
 
-## 8. Mã nguồn và tài liệu
+## Triển khai Internet
 
-| Thư mục | Nội dung |
-| --- | --- |
-| `src/signaling/` | Tài khoản, discovery, signaling và nhóm |
-| `src/relay/` | Định tuyến, mailbox, replication, DHT và media relay |
-| `src/shared/` | Giao thức, peer, WebRTC, truyền tin, file và mã hóa |
-| `src/web-peer/` | Giao diện và dữ liệu phía trình duyệt |
-| `src/server-kit/` | Logging, secret và đường dẫn lưu trữ |
-| `tests/`, `scripts/` | Kiểm thử, chạy demo, thử tải và công cụ triển khai |
-| `deploy/`, `.github/` | Cấu hình Docker/server và GitHub Actions |
-| `docs/` | Báo cáo, kiến trúc, giao thức và tài liệu demo |
+1. Chạy signaling và relay thành hai process riêng.
+2. Dùng HTTPS/WSS reverse proxy theo [deploy/Caddyfile.example](deploy/Caddyfile.example).
+3. Điền URL công khai vào `.env` trước khi build web:
 
-Báo cáo: [PDF](docs/report.pdf), [Markdown](docs/report.md). Thiết kế: [architecture.md](docs/architecture.md), [protocol.md](docs/protocol.md). Hướng dẫn triển khai: [deploy/README.md](deploy/README.md).
+```env
+VITE_SIGNAL_URL=https://signal.example.org
+VITE_RELAY_URL=https://relay.example.org
+PUBLIC_SIGNAL_URL=https://signal.example.org
+PUBLIC_RELAY_URL=https://relay.example.org
+```
 
-## 9. Giới hạn và hướng phát triển
+4. Chạy `npm.cmd run build:web` và phục vụ `src/web-peer/dist`.
+5. Dùng ít nhất hai mạng, ví dụ Wi-Fi và 4G, để kiểm tra NAT và fallback thực tế.
 
-### Giới hạn hiện tại
+## Giới hạn đã xác định
 
-- Signaling là điểm phụ thuộc của tài khoản và nhóm. DHT dùng ring cấu hình sẵn, chưa hỗ trợ tài khoản/nhóm.
-- Hai relay chạy cùng máy không bảo vệ được khi cả máy dừng. Replication và election hội tụ cuối cùng, không dùng Raft.
-- File cần người nhận online; chưa resume qua restart. Bản sao tài khoản giữ tối đa 8 MiB dữ liệu file trong archive tối đa 16 MiB trước mã hóa.
-- Lịch sử giữ tối đa 1.000 dòng và 10.000 khóa dedup mỗi peer. Hệ thống không cam kết exactly-once tuyệt đối.
-- Mỗi tài khoản có một peer online; chưa có khôi phục mật khẩu. Gọi nhóm dùng mesh nên số kết nối và băng thông tăng theo số người.
+- `.env.example` cấu hình STUN Cloudflare và Google; TURN tùy chọn qua `VITE_ICE_SERVERS`. Có mẫu coturn, chưa xác minh một TURN public. ICE relay candidate được ghi `TURN`, không gọi là DIRECT.
+- Relay Socket.IO là relay tầng ứng dụng, không phải TURN.
+- Mailbox lưu tối đa 500 envelope chưa xác nhận trên mỗi relay, TTL 24 giờ. File chunk không được giữ cho peer offline. Trạng thái `queued` chỉ xác nhận relay đã lưu bền vững, chưa phải người nhận đã nhận. Hết hạn mà chưa có ACK thì peer báo chưa xác nhận, ghi `DELIVERY_ERROR` và cho retry cùng ID; deadline được lưu qua reload. ACK hợp lệ đến muộn vẫn có thể xác nhận tin.
+- CLI signaling mặc định lưu trạng thái trong `../DS01-runtime/data/`. Launcher khóa kho trạng thái để tránh hai signaling writer, tự nhận biết khóa của PID đã dừng. Chưa có replication/failover signaling; Docker giữ dữ liệu trong volume riêng `/app/.data`.
+- Có failover tối đa bốn application relay. Mailbox và lease ứng viên được sao chép bất đồng bộ qua HTTP HMAC, không dùng chung file/volume. ACK tombstone thắng bản mail cũ khi merge. Tin mới chỉ được một relay ghi nhận có thể mất nếu relay đó hỏng trước khi sao chép; đây không phải quorum hay đồng thuận mạnh.
+- Sequence/session được khôi phục, kết hợp logical time và merge thứ tự theo sender; không total order toàn hệ thống.
+- Giữ 1000 dòng lịch sử và 10000 khóa dedup mỗi peer. File cá nhân và nhóm tối đa 20 MiB, lưu IndexedDB; người nhận cần trực tuyến. Chưa resume file qua restart. Bản sao tài khoản có ngân sách tối đa 8 MiB dữ liệu file; file lớn vẫn nằm trên thiết bị đã gửi hoặc nhận.
+- Web mặc định E2EE: ECDH P-256, HKDF, AES-256-GCM và HMAC cho danh tính sự kiện. Nội dung text, file, ACK được mã hóa; relay vẫn thấy thông tin định tuyến. Khóa đang dùng không extract được, lưu trong IndexedDB. Chế độ tài khoản giữ thêm vault mã hóa bằng mật khẩu với PBKDF2-SHA256 600.000 vòng, AES-GCM và khóa đồng bộ riêng; server không giữ mật khẩu/khóa riêng dạng rõ. Bản sao tối đa 16 MiB trước mã hóa, gồm tối đa 1000 dòng và file tham chiếu còn có trên thiết bị. Đồng bộ dùng version để chống ghi đè bản mới, merge theo Message ID và tombstone xóa tin. Không có khôi phục mật khẩu, đồng bộ nhiều thiết bị online đồng thời hay replication cho kho tài khoản; mất mật khẩu và mọi bản khóa đang dùng sẽ mất khả năng mở vault. Xác minh khóa lần đầu vẫn cần tin cậy signaling hoặc đối chiếu ngoài kênh.
+- Adapter nhóm dự án và block tài khoản được giữ để mở rộng, nhưng cần Mobile API bên ngoài khi dùng Peer ID tài khoản Mongo 24 ký tự hex.
 
-### Triển khai trên máy chủ
+## Phạm vi nâng cao 5.11 và cách kiểm chứng
 
-Nhóm dự kiến dùng máy chủ public để hệ thống hoạt động độc lập với laptop. Có thể thuê VPS hoặc dùng hạ tầng được cấp, sau đó cấu hình domain và HTTPS.
+| Tính năng            | Hiện thực và cách kiểm chứng                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nhiều relay          | Hai relay độc lập trong `demo:public` và Compose; xem hai PID, hai `/health` và log trên dashboard.                                                                                                                                                                                                                                                                                                                                             |
+| Chọn theo độ trễ/tải | `Tình trạng kết nối` → `Kết nối nâng cao`: RTT EWMA, số kết nối, số tin chờ và điểm chọn. Điểm = RTT + 0,25 × kết nối + 2 × tin chờ; ưu tiên relay hiện tại 10% để giảm dao động.                                                                                                                                                                                                                                                               |
+| Failover             | Giữ peer nối cả hai relay, dừng relay chính bằng trình quản lý tiến trình rồi gửi tiếp. Log có relay mới và ACK từ receiver. `test:browser` cũng kiểm tra tình huống này.                                                                                                                                                                                                                                                                       |
+| Bầu super-peer       | Peer chạy một relay đồng hành có `SUPER_PEER_ID` trùng Peer ID, URL HTTPS nằm trong cluster. Nhập URL ở bảng nâng cao và ứng cử. Cluster thực hiện HTTP probe có nonce, kiểm tra chủ sở hữu rồi bầu Peer ID lớn nhất theo thứ tự ký tự trong các lease còn hạn. Lease 45 giây, SDK gia hạn 10 giây. Có thể có leader tạm khác nhau khi phân vùng; không phải Raft. Tab trình duyệt riêng lẻ không mở cổng server.                               |
+| Replication          | Hai snapshot độc lập; chu kỳ pull mặc định 2 giây, Lamport/version và delete-wins cho mailbox. Chờ log `REPLICA_MERGE` trước khi dừng relay để chứng minh bản sao đã nhận tin.                                                                                                                                                                                                                                                                  |
+| Store-and-forward    | A/B đã công bố khóa; đóng B, A gửi và thấy `Relay đã lưu`. B trở lại cùng profile, nhận đúng một bản, A chuyển `Đã nhận` sau ACK. Có test A cũng restart và relay chính hỏng sau replication.                                                                                                                                                                                                                                                   |
+| E2EE                 | Xem fingerprint thiết bị trong bảng nâng cao. Relay chỉ chuyển `sealed`; snapshot không có nội dung chat/file. Khóa tài khoản được ghim tại signaling và từng peer. SDK cho phép plaintext khi `encryption:false` để chạy benchmark tương thích; web dùng E2EE mặc định.                                                                                                                                                                        |
+| DHT                  | Đăng xuất → `Chế độ thử nghiệm` → nhập tên → `Kết nối bằng DHT`. ID tự dẫn xuất từ khóa ký. Hai replica theo consistent-hash ring chứa bản đăng ký ký số; có thể dừng signaling và vẫn discovery/chat/file/gọi. DHT là prototype với danh sách relay cấu hình sẵn, không phải Kademlia; chưa có nhóm hoặc tài khoản trong chế độ này. Lease online 60 giây; khóa ký được giữ thêm hai ngày để mở mail offline.                                  |
+| File                 | Nút `+` trong chat cá nhân hoặc nhóm, tối đa 20 MiB. Chunk có ACK, giới hạn bộ nhớ, SHA-256 và lưu IndexedDB; E2EE áp dụng cả bytes và metadata file bên trong envelope. Theo dõi kết quả riêng từng người nhận; chưa resume qua restart hoặc gửi chunk cho peer offline.                                                                                                                                                                       |
+| STUN                 | Cấu hình `VITE_ICE_SERVERS`; ICE tự thu thập và thử candidate. STUN không bảo đảm vượt mọi NAT. Lab kiểm tra binding request thật; cần hai mạng để kết luận NAT Internet.                                                                                                                                                                                                                                                                       |
+| WebRTC/TURN          | DataChannel ưu tiên kết nối trực tiếp; candidate được chọn có `relay` thì hiển thị `TURN`. TURN khác application relay Socket.IO. `test:browser:advanced` buộc TURN UDP thật trên loopback và kiểm tra `/health` của application relay không tăng FORWARD.                                                                                                                                                                                      |
+| Thoại/video          | Chat cá nhân và nhóm có gọi thoại/video; chỉ thu mic/camera sau thao tác chấp nhận hoặc chủ động tham gia. WebRTC dùng DIRECT/TURN; khi ICE thất bại, có fallback media mã hóa qua application relay bằng frame ứng dụng riêng, không phải chuyển tiếp RTP. Có mute, tắt camera, từ chối, kết thúc, timeout và dọn media tracks. Ngoài localhost cần HTTPS và quyền thiết bị. Kiểm chứng bằng `test:browser:advanced` và `test:browser:groups`. |
+| Tải nhiều peer       | `test:browser` chạy ma trận 3/20/50/100 peer; `load:relay` cho phép 3–100 peer, tối đa 50 worker. Kiểm tra đúng receiver, envelope nguyên vẹn, throughput, p50/p95, tỷ lệ thành công và bytes payload. Đây là tải Socket.IO headless, không đo chi phí browser/E2EE/ACK lưu lịch sử.                                                                                                                                                            |
 
-| Phần đã chuẩn bị | Việc triển khai tiếp theo |
-| --- | --- |
-| [Dockerfile](deploy/Dockerfile) và [Compose](deploy/compose.yml) | Chạy web, signaling và hai relay bằng container trên máy chủ; giữ dữ liệu bằng volume |
-| [Workflow CD](.github/workflows/delivery.yml) | Cấu hình máy chủ/SSH, phát hành image lên GHCR và cập nhật container từ Actions |
-| [Caddy](deploy/Caddyfile.example) | Trỏ domain và phục vụ HTTPS cho web, signaling và relay |
-| [Coturn](deploy/turnserver.conf.example) | Chạy TURN public, cấu hình firewall và tài khoản có thời hạn |
+Để chạy lab nâng cao bằng Chrome thật, dùng `npm.cmd run test:browser:advanced`. Lab tạo STUN/TURN riêng chỉ ở loopback, thông tin đăng nhập ngẫu nhiên và camera/mic giả; không cần cấp quyền thiết bị thật. Cờ cho phép loopback ICE chỉ dùng trong kiểm thử. Mẫu coturn trong `deploy/` dành cho cấu hình máy chủ thật, không dùng node-turn lab làm TURN public.
 
-Workflow CD hiện chạy thủ công: `deploy=false` kiểm tra và phát hành image; `deploy=true` cập nhật máy chủ đã cấu hình. Khi endpoint HTTPS trên máy chủ hoạt động, có thể dùng domain đó thay cho tunnel tạm. Các bước chuẩn bị nằm trong [deploy/README.md](deploy/README.md).
+## Kiểm thử và đánh giá mục 9
 
-Các hướng khác: signaling dự phòng, DHT thay đổi thành viên động, resume file, đồng bộ đa thiết bị và cách truyền media phù hợp nhóm lớn hơn.
+```powershell
+npm.cmd run evaluate
+npm.cmd run test:browser
+npm.cmd run test:browser:advanced
+```
+
+`evaluate` chạy toàn bộ Vitest, ánh xạ tên ca kiểm thử vào nhóm yêu cầu và thất bại nếu dưới 8 functional, 2 concurrency, 2 fault/recovery hoặc 2 security. Ma trận hiện ánh xạ 8/3/3/3 ca; không coi số lượng test là bằng chứng mọi điều kiện WAN đã đạt. Kết quả JSON và log nằm ngoài repository ở `../DS01-runtime/evaluation-*`.
+
+Các xung đột được kiểm tra gồm đăng ký cùng Peer ID, gửi hai chiều/gửi nhóm gần đồng thời, ID trùng nội dung khác và merge replica trái thứ tự. Phục hồi gồm storage failure, DIRECT hỏng, relay không trả lời/dừng, peer crash/restart, signaling restart và offline mailbox. Bảo mật gồm giả sender/token, quyền nhóm bị thu hồi, format/kích thước, ciphertext bị sửa, khóa thay đổi và replay HTTP cluster.
+
+`test:browser` ghi độ trễ có application ACK, thời gian phát hiện offline/chuyển relay, file có SHA-256 và ma trận tải. `test:browser:advanced` lưu candidate-pair, RTP audio/video, thời gian nhận qua TURN và khôi phục mailbox. Các số đo được tạo mỗi lần chạy, không lấy số liệu ví dụ làm kết quả thực nghiệm. Phân biệt localhost, URL public truy cập được và giao tiếp giữa hai mạng/NAT thực tế khi báo cáo.
+
+## Bàn giao mục 10
+
+Repository có `README.md`, `src/`, `deploy/`, `tests/`, `scripts/`, `docs/` và `.env.example`. `docs/report.pdf` hiện có nhưng cần cập nhật với tính năng/kết quả mới trước khi nộp; `docs/slides.pdf` chưa có và là tùy chọn theo đề.
+
+| GitHub thành viên xuất hiện trong lịch sử local | Họ tên / MSSV                       | Phần việc thực tế                                                                                                                                                         |
+| ----------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Namtran205                                      | Nam — bổ sung họ tên đầy đủ / MSSV  | B2: WebRTC, NAT, STUN/TURN; B4: giao thức, ACK/retry/dedup, thứ tự tin; N2: replication và mailbox; N3: bầu super-peer; N7: thoại/video; D1: triển khai, Docker và CI/CD. |
+| Ngocnguyen055                                   | Ngọc — bổ sung họ tên đầy đủ / MSSV | B5: chat nhóm, membership/OCC; B6: giao diện và lịch sử cục bộ; N4: E2EE và quản lý khóa; N5: DHT discovery; biên tập báo cáo chung.                                      |
+| hong0110                                        | Hồng — bổ sung họ tên đầy đủ / MSSV | B1: signaling, discovery, tài khoản; B3: relay và định tuyến an toàn; N1: đa relay, lựa chọn và failover; N6: truyền file; N8: workload và đo hiệu năng.                  |
+
+Phân công trên theo bảng công việc của nhóm. Cả ba cùng thực hiện C1 (phân tích, thiết kế), C2 (tích hợp, kiểm thử, demo) và C3 (viết phần kỹ thuật, chuẩn bị trình bày); Ngọc biên tập báo cáo. Phân công không thay thế kết quả nghiệm thu: WAN/NAT, Docker/server, Actions và báo cáo còn cần kiểm chứng hoặc hoàn thiện như các giới hạn nêu trên.
+
+Nhóm cần bổ sung họ tên đầy đủ/MSSV; mỗi người commit bằng Git identity của mình và kiểm tra email liên kết GitHub. Tag/release cuối như `v1.0.0` chỉ tạo sau nghiệm thu. Nếu repo private, chủ repo vào **Settings → Collaborators** để mời tài khoản giảng viên. Kiểm tra lại lịch sử và tag trên GitHub sau khi push.
+
+## CI/CD
+
+`.github/workflows/ci.yml` chạy khi push/PR hoặc chạy thủ công: `npm ci` → typecheck/lint → ma trận Vitest → build/audit → Chrome regression/load → Chrome TURN/media → build hai Docker target. Báo cáo và log được đưa lên Actions Artifacts; không upload profile browser hoặc file state/secret. Actions được ghim SHA và Dependabot kiểm tra cập nhật.
+
+`.github/workflows/delivery.yml` chỉ chạy qua **Actions → DS01 manual delivery → Run workflow**. Sau CI thành công, workflow phát hành image `ghcr.io/<owner>/<repo>/app:sha-<commit>` và `web:sha-<commit>`. Bật lựa chọn `deploy` mới chạy bước SSH đến server đã cấu hình, dùng environment `production`, kiểm tra health và khôi phục image trước nếu cập nhật thất bại. Thiết lập người duyệt environment trong GitHub nếu gói tài khoản hỗ trợ. Đây là cấu hình sẵn; chưa có lần chạy Actions/deploy thật cho các thay đổi chưa push.
+
+Hướng dẫn cấu hình biến, secrets, server và triển khai lại: [deploy/README.md](deploy/README.md). Tham chiếu cơ chế registry/token: [GitHub — Publishing Docker images](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images).
+
+## Tài liệu
+
+- [Hướng dẫn tự nghiệm thu từng yêu cầu DS01](docs/MANUAL-ACCEPTANCE.md)
+- [Bảng điền kết quả kiểm thử](docs/manual-results.csv)
+- [Tính năng nâng cao và cách chạy lại](docs/advanced-features.md)
+- [Trạng thái khắc phục và nghiệm thu](docs/implementation-status.md)
+- [Báo cáo kỹ thuật dự thảo](docs/report.pdf)
+- [Kiến trúc](docs/architecture.md)
+- [Giao thức](docs/protocol.md)
+- [Kế hoạch kiểm thử](docs/test-plan.md)
+- [Kịch bản demo](docs/demo-script.md)
+- [Dàn ý báo cáo](docs/report-outline.md)
