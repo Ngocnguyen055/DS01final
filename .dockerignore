@@ -19,7 +19,6 @@ coverage
 **/.vite
 **/.vite-temp
 **/*.tsbuildinfo
-docs/evidence
 *.log
 **/*.log
 **/*.tmp

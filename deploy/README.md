@@ -9,7 +9,7 @@
 
 Có thể dùng một máy chủ miễn phí hoặc tunnel HTTPS cho buổi thử. Tunnel cần tạo endpoint riêng cho signaling, relay và web. Repository không tự tạo tài khoản và không khẳng định đã triển khai công khai.
 
-TURN tùy chọn qua `VITE_ICE_SERVERS`, xem [advanced-features.md](../docs/advanced-features.md) và mẫu coturn. Chưa có bằng chứng TURN public.
+TURN tùy chọn qua `VITE_ICE_SERVERS`, xem [mẫu coturn](turnserver.conf.example) và phần [TURN và media](#turn-và-media) bên dưới. Chưa có bằng chứng TURN public.
 
 ## Chạy bằng Docker Compose
 

@@ -41,8 +41,7 @@
     "demo:local": "node scripts/demo-public.mjs --local",
     "demo:public": "node scripts/demo-public.mjs --public",
     "demo:public:check": "node scripts/demo-public.mjs --public-check",
-    "setup:env": "node scripts/init-env.mjs",
-    "build:report": "node scripts/build-report.mjs"
+    "setup:env": "node scripts/init-env.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

@@ -87,7 +87,7 @@ F5 trong cùng tab tự khôi phục phiên. Nút **Đăng xuất** thu hồi ph
 
 Với tài khoản từ phiên bản cũ, khóa cũ không xuất được. Đăng nhập tại profile/URL cũ giúp ký xác nhận chuyển khóa; nếu không còn truy cập được thì cần xác nhận tạo khóa khôi phục một lần và peer liên hệ phải đối chiếu khóa khi được yêu cầu. Lịch sử chưa từng sao lưu vẫn ở origin/profile cũ: xuất JSON ở đó và chọn **Nhập lịch sử từ phiên bản cũ** tại giao diện mới. Không thể tự lấy dữ liệu chưa sao lưu từ một địa chỉ web khác.
 
-Hướng dẫn, thiết kế, giới hạn và 12 ca kiểm thử: [docs/authentication.md](docs/authentication.md).
+Kiểm tra khôi phục tài khoản, chuyển phiên và lịch sử bằng `npm.cmd run test:browser:accounts`.
 
 Các kịch bản bên dưới dùng ID demo `peer-a/peer-b/peer-c`: chọn **Chế độ thử nghiệm** ở cuối biểu mẫu để kết nối bằng Peer ID hoặc mở lịch sử demo cũ. Với tài khoản, thay các ID đó bằng Peer ID thực tế `user_...`. Log và checkbox relay nằm trong **Tình trạng kết nối**; quản lý nhóm trong **Thông tin hội thoại**.
 
@@ -149,7 +149,7 @@ npm.cmd run benchmark:relay
 
 Script gửi 100 envelope RELAY tuần tự và in `p50`, `p95`, `max`. Ghi rõ máy, mạng, ngày giờ và commit khi dùng kết quả trong báo cáo.
 
-Đo tải nhiều peer: `npm.cmd run load:relay -- --peers 20 --messages 10 --concurrency 8`. Phép đo headless này không đo ACK ứng dụng hoặc WebRTC; xem [advanced-features.md](docs/advanced-features.md).
+Đo tải nhiều peer: `npm.cmd run load:relay -- --peers 20 --messages 10 --concurrency 8`. Phép đo headless này không đo ACK ứng dụng hoặc WebRTC.
 
 ## Triển khai Internet
 
@@ -215,7 +215,7 @@ Các xung đột được kiểm tra gồm đăng ký cùng Peer ID, gửi hai c
 
 ## Bàn giao mục 10
 
-Repository có `README.md`, `src/`, `deploy/`, `tests/`, `scripts/`, `docs/` và `.env.example`. `docs/report.pdf` hiện có nhưng cần cập nhật với tính năng/kết quả mới trước khi nộp; `docs/slides.pdf` chưa có và là tùy chọn theo đề.
+Repository hiện có `README.md`, `src/`, `deploy/`, `tests/`, `scripts/` và `.env.example`. Báo cáo (`.docx`/`.pdf`) và slide sẽ được bổ sung vào `docs/` sau; thư mục này chỉ dành cho hai loại tài liệu nộp môn học.
 
 | GitHub thành viên xuất hiện trong lịch sử local | Họ tên / MSSV                       | Phần việc thực tế                                                                                                                                                         |
 | ----------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -234,16 +234,3 @@ Nhóm cần bổ sung họ tên đầy đủ/MSSV; mỗi người commit bằng 
 `.github/workflows/delivery.yml` chỉ chạy qua **Actions → DS01 manual delivery → Run workflow**. Sau CI thành công, workflow phát hành image `ghcr.io/<owner>/<repo>/app:sha-<commit>` và `web:sha-<commit>`. Bật lựa chọn `deploy` mới chạy bước SSH đến server đã cấu hình, dùng environment `production`, kiểm tra health và khôi phục image trước nếu cập nhật thất bại. Thiết lập người duyệt environment trong GitHub nếu gói tài khoản hỗ trợ. Đây là cấu hình sẵn; chưa có lần chạy Actions/deploy thật cho các thay đổi chưa push.
 
 Hướng dẫn cấu hình biến, secrets, server và triển khai lại: [deploy/README.md](deploy/README.md). Tham chiếu cơ chế registry/token: [GitHub — Publishing Docker images](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images).
-
-## Tài liệu
-
-- [Hướng dẫn tự nghiệm thu từng yêu cầu DS01](docs/MANUAL-ACCEPTANCE.md)
-- [Bảng điền kết quả kiểm thử](docs/manual-results.csv)
-- [Tính năng nâng cao và cách chạy lại](docs/advanced-features.md)
-- [Trạng thái khắc phục và nghiệm thu](docs/implementation-status.md)
-- [Báo cáo kỹ thuật dự thảo](docs/report.pdf)
-- [Kiến trúc](docs/architecture.md)
-- [Giao thức](docs/protocol.md)
-- [Kế hoạch kiểm thử](docs/test-plan.md)
-- [Kịch bản demo](docs/demo-script.md)
-- [Dàn ý báo cáo](docs/report-outline.md)
