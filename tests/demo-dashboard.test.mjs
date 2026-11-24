@@ -126,7 +126,7 @@ describe("local demo observation dashboard", () => {
       ["scripts/demo-public.mjs", "--local"],
       {
         windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe", "ipc"],
         env: {
           ...process.env,
           DS01_DATA_DIR: data,
@@ -136,7 +136,10 @@ describe("local demo observation dashboard", () => {
         },
       },
     );
-    let output = "";
+    let output = "",
+      directory,
+      session,
+      testError;
     const capture = (chunk) => {
       output = (output + chunk).slice(-100000);
     };
@@ -155,12 +158,12 @@ describe("local demo observation dashboard", () => {
       throw Error(`Timeout ${label}: ${output}`);
     }
     try {
-      const directory = await until(
+      directory = await until(
         () => output.match(/Demo data: ([^\r\n]+)/)?.[1],
         "startup directory",
       );
       await until(() => output.includes("Local demo ready."), "ready demo");
-      const session = JSON.parse(
+      session = JSON.parse(
         await readFile(join(directory, "session.json"), "utf8"),
       );
       const initial = await (
@@ -256,29 +259,52 @@ describe("local demo observation dashboard", () => {
       expect(stale.stderr).toContain("Mã nguồn đã thay đổi");
       expect(stale.stdout).not.toContain("Reusing the existing demo");
       expect((await fetch(session.local.web)).ok).toBe(true);
+    } catch (error) {
+      testError = error;
+      throw error;
     } finally {
-      if (child.exitCode === null) {
-        if (process.platform === "win32")
-          await execute(
-            "taskkill.exe",
-            ["/PID", String(child.pid), "/T", "/F"],
-            { windowsHide: true },
-          ).catch((error) => {
-            if (child.exitCode === null) throw error;
-          });
-        else child.kill("SIGINT");
-      }
       let timeout;
       try {
-        await Promise.race([
-          closed,
-          new Promise((resolve) => {
-            timeout = setTimeout(resolve, 5000);
+        const code = await Promise.race([
+          (async () => {
+            if (child.connected)
+              await new Promise((resolve, reject) => {
+                child.send({ type: "ds01:shutdown" }, (error) =>
+                  error ? reject(error) : resolve(),
+                );
+              });
+            return closed;
+          })(),
+          new Promise((_, reject) => {
+            timeout = setTimeout(
+              () => reject(Error(`Demo cleanup timed out: ${output}`)),
+              10000,
+            );
           }),
         ]);
+        expect(code).toBe(0);
+      } catch (error) {
+        if (testError)
+          throw new AggregateError(
+            [testError, error],
+            "Demo test failed and cleanup also failed",
+          );
+        throw error;
       } finally {
         clearTimeout(timeout);
       }
     }
+    const finished = JSON.parse(
+      await readFile(join(directory, "session.json"), "utf8"),
+    );
+    expect(finished.passed).toBe(true);
+    expect(finished.finishedAt).toBeTruthy();
+    await expect(readFile(join(data, "demo.lock"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    for (const url of [session.dashboardUrl, ...Object.values(session.local)])
+      await expect(
+        fetch(url, { signal: AbortSignal.timeout(1000) }),
+      ).rejects.toThrow();
   }, 60000);
 });

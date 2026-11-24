@@ -388,11 +388,20 @@ async function main() {
       response.writeHead(400).end();
     }
   }
+  function requestStop() {
+    stopRequested = true;
+    endSession();
+  }
   for (const signal of ["SIGINT", "SIGTERM"])
-    process.once(signal, () => {
-      stopRequested = true;
-      endSession();
+    process.once(signal, requestStop);
+  // A parent launcher can use its private IPC channel to request the same
+  // cleanup as Ctrl+C without terminating a Windows process tree.
+  if (process.send) {
+    process.on("message", (message) => {
+      if (message?.type === "ds01:shutdown") requestStop();
     });
+    process.once("disconnect", requestStop);
+  }
   const startupDeadline = setTimeout(() => {
     failure = Error("Demo startup deadline exceeded");
     stopRequested = true;
@@ -721,7 +730,11 @@ async function main() {
     await releaseDemo?.();
   }
 }
-await main().catch((error) => {
-  console.error(`Cannot prepare demo in ${runtimeRoot}: ${error.message}`);
-  process.exitCode = 1;
-});
+await main()
+  .catch((error) => {
+    console.error(`Cannot prepare demo in ${runtimeRoot}: ${error.message}`);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    if (process.connected) process.disconnect();
+  });
