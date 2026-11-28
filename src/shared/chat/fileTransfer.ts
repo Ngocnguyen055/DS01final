@@ -1,12 +1,12 @@
-import { randomUUID } from "./uuid.ts";
+import { randomUUID } from "../uuid.ts";
 import {
   chatAttachmentSchema,
   MAX_CHAT_ATTACHMENT_BYTES,
   FILE_CHUNK_BYTES,
   type ChatMessage,
   type FileChunk,
-} from "./protocol.ts";
-import type { ChatStore, PeerEvent } from "./peerTypes.ts";
+} from "../protocol.ts";
+import type { ChatStore, PeerEvent } from "../peerTypes.ts";
 const CHUNK_BYTES = FILE_CHUNK_BYTES;
 export async function fileHash(data: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest(

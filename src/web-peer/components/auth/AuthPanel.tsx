@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import type { useWebPeer } from "./useWebPeer.ts";
+import type { useWebPeer } from "../../hooks/useWebPeer.ts";
 
 export function AuthPanel({
   peer: p,

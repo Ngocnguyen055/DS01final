@@ -6,7 +6,7 @@ import {
   type GroupCallContext,
   type GroupCallSignalContext,
   type GroupCallRoom,
-} from "../shared/groupCallProtocol.ts";
+} from "../shared/media/groupCallProtocol.ts";
 import type { SignalingContext } from "./types.ts";
 import { serviceLog } from "../server-kit/runtime.ts";
 

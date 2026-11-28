@@ -10,7 +10,7 @@ import {
   mediaFrameSchema,
   type MediaCipher,
   type MediaFrame,
-} from "./mediaProtocol.ts";
+} from "./media/mediaProtocol.ts";
 
 export const publicKeySchema = z
   .object({

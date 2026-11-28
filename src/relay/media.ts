@@ -1,9 +1,9 @@
 import type { Socket } from "socket.io";
-import { mediaFrameSchema, mediaOpenSchema } from "../shared/mediaProtocol.ts";
+import { mediaFrameSchema, mediaOpenSchema } from "../shared/media/mediaProtocol.ts";
 import {
   MAX_GROUP_CALL_PEERS,
   type GroupCallContext,
-} from "../shared/groupCallProtocol.ts";
+} from "../shared/media/groupCallProtocol.ts";
 
 type Binding = {
   callId: string;

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { PcmPlayout } from "../src/shared/audioPlayout.ts";
+import { PcmPlayout } from "../src/shared/media/audioPlayout.ts";
 import {
   groupCallRecord,
   privateCallRecord,
   recoverCallRecords,
-} from "../src/web-peer/callHistory.ts";
-import { GroupMediaSession } from "../src/shared/groupMedia.ts";
+} from "../src/web-peer/storage/callHistory.ts";
+import { GroupMediaSession } from "../src/shared/media/groupMedia.ts";
 
 function tone(sequence: number) {
   const bytes = new Uint8Array(1280),

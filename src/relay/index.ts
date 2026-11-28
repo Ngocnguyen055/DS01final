@@ -8,28 +8,18 @@ import jwt from "jsonwebtoken";
 import { Server, type Socket } from "socket.io";
 import {
   MAX_WIRE_BYTES,
-  groupSchema,
   peerIdSchema,
   type Group,
 } from "@ds01/shared";
 import { guardSocket, serviceLog } from "../server-kit/runtime.ts";
 import { requireSecret } from "../server-kit/secrets.ts";
-import {
-  parseWireMessage,
-  MAX_SEALED_WIRE_BYTES,
-  type WireMessage,
-} from "../shared/secure.ts";
+import { MAX_SEALED_WIRE_BYTES } from "../shared/secure.ts";
+import { createChatForwarding } from "./chatForwarding.ts";
 import { RelayCluster } from "./cluster.ts";
 import { z } from "zod";
 import { RelayMediaRouter } from "./media.ts";
 if (process.env.NODE_ENV !== "test")
   loadEnv({ path: join(projectRoot, ".env") });
-type Reply = (response: {
-  ok: boolean;
-  error?: string;
-  queued?: boolean;
-  expiresAt?: number;
-}) => void;
 export type DirectChatAuthorizer = (
   senderId: string,
   receiverId: string,
@@ -107,23 +97,6 @@ export function createRelay(
     options.publicUrl ||
     process.env.RELAY_PUBLIC_URL ||
     `http://127.0.0.1:${(httpServer.address() as { port: number } | null)?.port || 4002}`;
-  const drainAttempts = new Map<
-    string,
-    { socket: string; count: number; sentAt: number }
-  >();
-  let draining = false;
-  const forward = (target: Socket, input: unknown, msg: WireMessage) => {
-    target.emit("relay:receive", input);
-    metrics.forwardedMessages++;
-    metrics.forwardedPayloadBytes += Buffer.byteLength(
-      JSON.stringify(input),
-      "utf8",
-    );
-    log(
-      "FORWARD",
-      `${msg.messageId} ${msg.senderId} -> ${msg.receiverId} ${msg.type} attempt=${msg.attempt} result=forwarded`,
-    );
-  };
   const cluster = new RelayCluster(
     app,
     connections,
@@ -149,56 +122,7 @@ export function createRelay(
         process.env.ALLOW_LOCAL_SUPERPEERS === "1",
       candidateLeaseMs: options.candidateLeaseMs,
     },
-    async () => {
-      if (!offlineQueue || draining) return;
-      draining = true;
-      try {
-        for (const entry of cluster.journal.pending().slice(0, 500)) {
-          const msg = parseWireMessage(entry.value),
-            target = connections.get(msg.receiverId),
-            attempt = drainAttempts.get(entry.key);
-          if (
-            !target?.connected ||
-            target.data.tokenExpiresAt <= Date.now() ||
-            (attempt?.socket === target.id &&
-              (attempt.count >= 3 || Date.now() - attempt.sentAt < 4000))
-          )
-            continue;
-          try {
-            await authorizeSession(msg.receiverId, target.data.authSession);
-            if (msg.groupId) {
-              const group = groupSchema.parse(await lookup(msg.groupId));
-              if (
-                group.id !== msg.groupId ||
-                group.archived ||
-                !group.members.includes(msg.senderId) ||
-                !group.members.includes(msg.receiverId)
-              )
-                continue;
-            } else if (!(await authorizeDirect(msg.senderId, msg.receiverId)))
-              continue;
-            if (connections.get(msg.receiverId) !== target || !target.connected)
-              continue;
-            drainAttempts.set(entry.key, {
-              socket: target.id,
-              count: attempt?.socket === target.id ? attempt.count + 1 : 1,
-              sentAt: Date.now(),
-            });
-            forward(target, entry.value, msg);
-          } catch {
-            continue;
-          }
-        }
-        for (const key of drainAttempts.keys())
-          if (
-            !cluster.journal.entries.has(key) ||
-            cluster.journal.entries.get(key)?.deleted
-          )
-            drainAttempts.delete(key);
-      } finally {
-        draining = false;
-      }
-    },
+    () => chat.drainMailbox(),
   );
   app.get("/health", (_req, res) =>
     res.json({
@@ -241,6 +165,23 @@ export function createRelay(
     if (!response.ok || (await response.json()).allowed !== true)
       throw Error("account session expired");
   };
+  const requireActive = (candidate: Socket, id: string, role: string) => {
+    if (!candidate.connected || connections.get(id) !== candidate)
+      throw Error(`${role} connection changed`);
+    if (candidate.data.tokenExpiresAt <= Date.now())
+      throw Error(`${role} session expired`);
+  };
+  const chat = createChatForwarding({
+    connections,
+    journal: cluster.journal,
+    offlineQueue,
+    lookupGroup: lookup,
+    authorizeDirect,
+    authorizeSession,
+    requireActive,
+    metrics,
+    log,
+  });
   const media = new RelayMediaRouter({
     connections,
     authorize: authorizeDirect,
@@ -340,12 +281,6 @@ export function createRelay(
         socket.disconnect(true);
       } else expiryTimer = setTimeout(expire, Math.min(remaining, 2147483647));
     };
-    const requireActive = (candidate: Socket, id: string, role: string) => {
-      if (!candidate.connected || connections.get(id) !== candidate)
-        throw Error(`${role} connection changed`);
-      if (candidate.data.tokenExpiresAt <= Date.now())
-        throw Error(`${role} session expired`);
-    };
     socket.on("relay:probe", (_input, reply) => {
       if (typeof reply === "function")
         reply({
@@ -357,21 +292,6 @@ export function createRelay(
           },
           leader: cluster.journal.leader() || null,
         });
-    });
-    socket.on("relay:consumed", (input, reply) => {
-      if (typeof reply !== "function") return;
-      try {
-        requireActive(socket, peerId, "receiver");
-        const value = z
-          .object({ messageId: z.string().uuid(), senderId: peerIdSchema })
-          .strict()
-          .parse(input);
-        if (offlineQueue)
-          cluster.journal.acknowledge(value.senderId, value.messageId, peerId);
-        reply({ ok: true });
-      } catch {
-        reply({ ok: false, error: "invalid mailbox receipt" });
-      }
     });
     for (const event of [
       "dht:publish",
@@ -437,72 +357,7 @@ export function createRelay(
       setTimeout(() => {
         void cluster.synchronize();
       }, 200);
-    socket.on("relay:send", async (input: unknown, reply: Reply) => {
-      if (typeof reply !== "function") return;
-      try {
-        const msg = parseWireMessage(input);
-        requireActive(socket, peerId, "sender");
-        await authorizeSession(peerId, socket.data.authSession);
-        if (msg.senderId !== peerId || msg.mode !== "RELAY")
-          throw new Error("sender or mode mismatch");
-        if (msg.groupId) {
-          const result = groupSchema.safeParse(await lookup(msg.groupId));
-          if (
-            !result.success ||
-            result.data.id !== msg.groupId ||
-            result.data.archived ||
-            !result.data.members.includes(peerId) ||
-            !result.data.members.includes(msg.receiverId)
-          )
-            throw new Error("group access denied");
-        } else if (!(await authorizeDirect(peerId, msg.receiverId)))
-          throw new Error("direct chat blocked");
-        const target = connections.get(msg.receiverId);
-        requireActive(socket, peerId, "sender");
-        if (
-          !target &&
-          (msg.type === "file-chunk" ||
-            (msg.type === "sealed" && msg.traffic === "file-chunk"))
-        )
-          throw Error("file receiver offline");
-        if (offlineQueue && msg.ackFor)
-          cluster.journal.acknowledge(msg.receiverId, msg.ackFor, peerId);
-        const queued =
-          offlineQueue && (!msg.ackFor || !target)
-            ? cluster.journal.enqueue(msg)
-            : undefined;
-        if (!target) {
-          if (!offlineQueue) throw new Error("receiver offline");
-          log("QUEUED", `${msg.messageId} ${peerId} -> ${msg.receiverId}`);
-          return reply({
-            ok: true,
-            queued: true,
-            expiresAt: queued?.expiresAt,
-          });
-        }
-        requireActive(target, msg.receiverId, "receiver");
-        await authorizeSession(msg.receiverId, target.data.authSession);
-        requireActive(socket, peerId, "sender");
-        requireActive(target, msg.receiverId, "receiver");
-        forward(target, input, msg);
-        if (offlineQueue)
-          drainAttempts.set(
-            cluster.journal.mailKey(
-              msg.senderId,
-              msg.messageId,
-              msg.receiverId,
-            ),
-            { socket: target.id, count: 1, sentAt: Date.now() },
-          );
-        reply?.({ ok: true });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "invalid message";
-        metrics.rejectedMessages++;
-        log("REJECT", `${peerId}: ${message}`);
-        reply?.({ ok: false, error: message });
-      }
-    });
+    chat.attach(socket, peerId);
     socket.on("disconnect", (reason) => {
       clearTimeout(expiryTimer);
       if (connections.get(peerId)?.id === socket.id) {

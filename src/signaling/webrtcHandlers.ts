@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { SignalingContext, SignalingReply } from "./types.ts";
 import { serviceLog } from "../server-kit/runtime.ts";
 import { peerIsOnline } from "./presence.ts";
-import { mediaSignalSchema } from "../shared/media.ts";
+import { mediaSignalSchema } from "../shared/media/media.ts";
 import type { GroupCalls } from "./groupCalls.ts";
 const sdp = (type: "offer" | "answer") =>
   z.object({

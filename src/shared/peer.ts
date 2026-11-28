@@ -3,9 +3,9 @@ import {
   DirectTransport,
   type SignalKind,
   type SignalPacket,
-} from "./directTransport.ts";
-import { MessageDelivery } from "./messageDelivery.ts";
-import { FileTransfer } from "./fileTransfer.ts";
+} from "./transport/directTransport.ts";
+import { MessageDelivery } from "./chat/messageDelivery.ts";
+import { FileTransfer } from "./chat/fileTransfer.ts";
 import {
   DEFAULT_PEER_CONNECTION,
   groupSchema,
@@ -32,7 +32,7 @@ import {
   rotationStatement,
   type AccountVault,
 } from "./accountProtocol.ts";
-import { RelaySelector } from "./relaySelection.ts";
+import { RelayPool } from "./transport/relayPool.ts";
 import {
   createOverlayRecord,
   verifyOverlayRecord,
@@ -40,12 +40,12 @@ import {
   type OverlayRecord,
 } from "./overlayProtocol.ts";
 import { signIdentity } from "./secure.ts";
-import { MediaSession } from "./media.ts";
-import type { MediaFrame, MediaLink } from "./mediaProtocol.ts";
-import { GroupMediaSession } from "./groupMedia.ts";
-import { RelayMedia } from "./relayMedia.ts";
-import { SignalingTransportError } from "./signalingErrors.ts";
-import type { GroupCallContext, GroupCallRoom } from "./groupCallProtocol.ts";
+import { MediaSession } from "./media/media.ts";
+import type { MediaFrame, MediaLink } from "./media/mediaProtocol.ts";
+import { GroupMediaSession } from "./media/groupMedia.ts";
+import { RelayMedia } from "./media/relayMedia.ts";
+import { SignalingTransportError } from "./transport/signalingErrors.ts";
+import type { GroupCallContext, GroupCallRoom } from "./media/groupCallProtocol.ts";
 export type {
   ChatStore,
   DirectChatContact,
@@ -83,9 +83,7 @@ export class PeerClient {
   private started = false;
   readonly peerId: string;
   private signal?: Socket;
-  private relays = new Map<string, Socket>();
-  private activeRelay?: string;
-  private relayWaiters = new Set<() => void>();
+  private readonly relayPool: RelayPool<Ack>;
   private signalWaiters = new Set<() => void>();
   private signalState: "connecting" | "online" | "reconnecting" | "offline" =
     "offline";
@@ -106,7 +104,9 @@ export class PeerClient {
   readonly secure: SecureChannel;
   readonly media: MediaSession;
   readonly groupMedia: GroupMediaSession;
-  readonly relaySelector = new RelaySelector();
+  get relaySelector() {
+    return this.relayPool.selector;
+  }
   private relayToken?: string;
   private advancedTimer?: ReturnType<typeof setInterval>;
   private candidateTimer?: ReturnType<typeof setInterval>;
@@ -120,13 +120,25 @@ export class PeerClient {
   }
   constructor(private config: PeerConfig) {
     this.peerId = config.peerId;
+    this.relayPool = new RelayPool({
+      primaryUrl: config.relayUrl,
+      requestTimeoutMs: config.requestTimeoutMs,
+      policy: () => this.config.relaySelection,
+      isClosed: () => this.closed,
+      configureSocket: (socket) => this.configureRelay(socket),
+      call: (socket, event, payload) => this.call(socket, event, payload),
+      log: (text) => this.log(text),
+      onConnection: () => this.connection(),
+      onMetrics: (relayMetrics) =>
+        this.emit({ kind: "relay-metrics", relayMetrics }),
+    });
     this.forceRelay = !!config.forceRelay;
     this.simulateMediaIceFailure = !!config.simulateMediaIceFailure;
     this.secure = new SecureChannel(
       config.peerId,
       async (peerId) => {
         if (config.discovery === "dht") {
-          const result = await this.overlayCall("dht:key", peerId);
+          const result = await this.relayPool.request("dht:key", peerId);
           return (await verifyOverlayRecord(result.result, true)).identity;
         }
         await this.waitForSignaling();
@@ -297,23 +309,20 @@ export class PeerClient {
     this.emit({ kind: "log", text });
   }
   private connection() {
+    const relays = this.relayPool.connectedSockets().length;
     if (this.config.discovery === "dht" && !this.closed && this.started)
-      this.signalState = [...this.relays.values()].some(
-        (socket) => socket.connected,
-      )
+      this.signalState = relays > 0
         ? "online"
         : this.signalState === "connecting"
           ? "connecting"
           : "reconnecting";
-    for (const check of this.relayWaiters) check();
     for (const check of this.signalWaiters) check();
     this.emit({
       kind: "connection",
       connection: {
         signaling: this.signalState,
-        relays: [...this.relays.values()].filter((socket) => socket.connected)
-          .length,
-        activeRelay: this.activeRelay,
+        relays,
+        activeRelay: this.relayPool.activeUrl,
       },
     });
   }
@@ -339,30 +348,6 @@ export class PeerClient {
       check();
     });
   }
-  private async waitForRelay() {
-    if (this.closed) throw new Error("peer disconnected");
-    if ([...this.relays.values()].some((socket) => socket.connected)) return;
-    this.log("waiting for outbound relay connection");
-    await new Promise<void>((resolve, reject) => {
-      const finish = (error?: Error) => {
-        clearTimeout(timer);
-        this.relayWaiters.delete(check);
-        if (error) reject(error);
-        else resolve();
-      };
-      const check = () => {
-        if (this.closed) finish(new Error("peer disconnected"));
-        else if ([...this.relays.values()].some((socket) => socket.connected))
-          finish();
-      };
-      const timer = setTimeout(
-        () => finish(new Error("relay connection timeout")),
-        this.config.requestTimeoutMs ?? 4000,
-      );
-      this.relayWaiters.add(check);
-      check();
-    });
-  }
   getOnlinePeers() {
     return [...this.peers];
   }
@@ -383,7 +368,7 @@ export class PeerClient {
   async lookupPeer(peerId: string): Promise<PeerDiscovery> {
     peerIdSchema.parse(peerId);
     if (this.config.discovery === "dht") {
-      const response = await this.overlayCall("dht:lookup", peerId);
+      const response = await this.relayPool.request("dht:lookup", peerId);
       if (!response.result)
         return { peerId, online: false, lastSeen: null, connection: null };
       const record = await verifyOverlayRecord(response.result);
@@ -439,8 +424,8 @@ export class PeerClient {
         );
         if (this.dhtRecord.peerId !== this.peerId)
           throw Error("DHT Peer ID must be derived from the signing key");
-        for (const url of this.dhtRecord.relayUrls) this.attachRelay(url);
-        await this.waitForRelay();
+        for (const url of this.dhtRecord.relayUrls) this.relayPool.attach(url);
+        await this.relayPool.waitForConnection();
         this.signalState = "online";
         this.connection();
         await this.refreshOverlay();
@@ -656,9 +641,7 @@ export class PeerClient {
     this.emit({ kind: "presence", peers: this.peers, profiles });
     for (const group of this.groups.values())
       this.emit({ kind: "group", group });
-    for (const socket of this.relays.values()) socket.disconnect();
-    this.relays.clear();
-    this.activeRelay = undefined;
+    this.relayPool.clear();
     this.relayToken = response.token;
     for (const url of [
       ...new Set(
@@ -667,7 +650,7 @@ export class PeerClient {
         ),
       ),
     ].slice(0, 4)) {
-      this.attachRelay(url);
+      this.relayPool.attach(url);
     }
     this.signalState = "online";
     this.connection();
@@ -746,7 +729,7 @@ export class PeerClient {
   }
   private async sendSignal(to: string, kind: SignalKind, data: unknown) {
     if (this.config.discovery === "dht") {
-      await this.overlayCall("overlay:signal", { to, kind, data });
+      await this.relayPool.request("overlay:signal", { to, kind, data });
       return;
     }
     if (!this.signal?.connected)
@@ -774,45 +757,7 @@ export class PeerClient {
       this.directTransport.send(packet.receiverId, wire);
       this.log(`${mode} SEND ${packet.messageId} -> ${packet.receiverId}`);
     } else {
-      await this.waitForRelay();
-      let failure = "relay unavailable";
-      if (
-        this.config.relaySelection === "latency-load" &&
-        !this.relaySelector.samples.size
-      )
-        await this.probeRelays();
-      const urls =
-        this.config.relaySelection === "latency-load"
-          ? this.relaySelector.rank([...this.relays.keys()], this.activeRelay)
-          : [...this.relays.keys()].sort(
-              (a, b) =>
-                Number(b === this.activeRelay) - Number(a === this.activeRelay),
-            );
-      const candidates = urls.map(
-        (url) => [url, this.relays.get(url)!] as const,
-      );
-      for (const [url, socket] of candidates) {
-        if (!socket.connected) continue;
-        try {
-          const response = await this.call(socket, "relay:send", wire);
-          if (!response.ok) {
-            failure = response.error || "relay rejected";
-            continue;
-          }
-          this.activeRelay = url;
-          this.connection();
-          this.log(
-            `RELAY SEND ${packet.messageId} -> ${packet.receiverId} via ${url}`,
-          );
-          return response.queued
-            ? { queued: true, expiresAt: response.expiresAt }
-            : undefined;
-        } catch (error) {
-          failure = String(error);
-          this.log(`relay failover: ${failure}`);
-        }
-      }
-      throw new Error(failure);
+      return this.relayPool.send(packet, wire);
     }
   }
   async send(
@@ -916,8 +861,7 @@ export class PeerClient {
               );
         if (accepted)
           await Promise.allSettled(
-            [...this.relays.values()]
-              .filter((socket) => socket.connected)
+            this.relayPool.connectedSockets()
               .map((socket) =>
                 this.call(socket, "relay:consumed", {
                   messageId: message.messageId,
@@ -935,7 +879,7 @@ export class PeerClient {
     callId: string,
     group?: GroupCallContext,
   ): Promise<MediaLink> {
-    await this.waitForRelay();
+    await this.relayPool.waitForConnection();
     let stopped = false,
       refreshing = false,
       failure = "";
@@ -946,8 +890,7 @@ export class PeerClient {
       refreshing = true;
       try {
         await Promise.allSettled(
-          [...this.relays.values()]
-            .filter((socket) => socket.connected)
+          this.relayPool.connectedSockets()
             .map(async (socket) => {
               try {
                 const response = await this.call(socket, "media:open", input);
@@ -989,7 +932,7 @@ export class PeerClient {
     return {
       send: (frame: MediaFrame) => {
         if (stopped || this.closed) return false;
-        const preferred = this.activeRelay && this.relays.get(this.activeRelay);
+        const preferred = this.relayPool.activeSocket;
         const socket =
           preferred && opened.has(preferred) && preferred.connected
             ? preferred
@@ -1014,10 +957,7 @@ export class PeerClient {
       },
     };
   }
-  private attachRelay(url: string) {
-    url = url.replace(/\/$/, "");
-    if (this.closed || this.relays.has(url)) return;
-    const socket = io(url, { autoConnect: false, reconnection: true });
+  private configureRelay(socket: Socket) {
     if (this.config.discovery === "dht")
       socket.auth = (callback) => {
         void (async () => {
@@ -1051,7 +991,6 @@ export class PeerClient {
         });
       };
     else socket.auth = { token: this.relayToken };
-    this.relays.set(url, socket);
     socket.on("relay:receive", (raw) => {
       void this.receive(raw, "RELAY");
     });
@@ -1077,47 +1016,9 @@ export class PeerClient {
         leader = parsed.data;
       }
       this.emit({ kind: "superpeer", leader });
-      if (leader && typeof leader.url === "string" && this.relays.size < 4)
-        this.attachRelay(leader.url);
+      if (leader && typeof leader.url === "string" && this.relayPool.size < 4)
+        this.relayPool.attach(leader.url);
     });
-    socket.on("connect", () => {
-      if (
-        !this.activeRelay ||
-        (this.config.relaySelection !== "latency-load" &&
-          url === this.config.relayUrl.replace(/\/$/, ""))
-      )
-        this.activeRelay = url;
-      this.log(`relay connected ${url}`);
-      this.connection();
-      if (this.config.relaySelection === "latency-load")
-        void this.probeRelays();
-    });
-    socket.on("disconnect", () => {
-      if (this.activeRelay === url)
-        this.activeRelay = [...this.relays].find(
-          ([, socket]) => socket.connected,
-        )?.[0];
-      this.log(`relay disconnected ${url}`);
-      this.connection();
-    });
-    socket.on("connect_error", (error) => {
-      this.log(`relay error: ${error.message}`);
-      this.connection();
-    });
-    socket.connect();
-  }
-  private async overlayCall(event: string, input: unknown) {
-    let last: unknown;
-    for (const socket of this.relays.values())
-      if (socket.connected)
-        try {
-          const response = await this.call(socket, event, input);
-          if (response.ok) return response;
-          last = response.error;
-        } catch (error) {
-          last = error;
-        }
-    throw Error(`overlay unavailable: ${String(last)}`);
   }
   private async refreshOverlay() {
     if (this.closed || this.refreshingOverlay) return;
@@ -1129,8 +1030,8 @@ export class PeerClient {
         [this.config.relayUrl, ...(this.config.relayUrls || [])],
         this.config.dhtLeaseMs,
       );
-      await this.overlayCall("dht:publish", this.dhtRecord);
-      const response = await this.overlayCall("dht:list", null);
+      await this.relayPool.request("dht:publish", this.dhtRecord);
+      const response = await this.relayPool.request("dht:list", null);
       if (!Array.isArray(response.result)) throw Error("invalid DHT peer list");
       const verified = await Promise.allSettled(
         response.result.map((value) => verifyOverlayRecord(value)),
@@ -1155,28 +1056,7 @@ export class PeerClient {
     }
   }
   async probeRelays() {
-    await Promise.allSettled(
-      [...this.relays]
-        .filter(([, socket]) => socket.connected)
-        .map(async ([url, socket]) => {
-          const start = performance.now(),
-            response = await this.call(socket, "relay:probe", null);
-          if (!response.ok || !response.load) return;
-          const sample = this.relaySelector.update(
-            url,
-            performance.now() - start,
-            response.load.peers,
-            response.load.pending,
-          );
-          this.log(
-            `RELAY_SCORE ${url} rtt=${sample.rttMs.toFixed(1)}ms peers=${sample.peers} pending=${sample.pending} score=${sample.score.toFixed(1)}`,
-          );
-        }),
-    );
-    this.emit({
-      kind: "relay-metrics",
-      relayMetrics: [...this.relaySelector.samples.values()],
-    });
+    await this.relayPool.probe();
   }
   setRelaySelection(policy: "priority" | "latency-load") {
     this.config.relaySelection = policy;
@@ -1190,10 +1070,10 @@ export class PeerClient {
     }
   }
   async volunteerSuperPeer(url: string) {
-    await this.overlayCall("superpeer:offer", { url });
+    await this.relayPool.request("superpeer:offer", { url });
     clearInterval(this.candidateTimer);
     this.candidateTimer = setInterval(() => {
-      void this.overlayCall("superpeer:offer", { url }).catch((error) =>
+      void this.relayPool.request("superpeer:offer", { url }).catch((error) =>
         this.log(String(error)),
       );
     }, 10000);
@@ -1226,9 +1106,7 @@ export class PeerClient {
     this.directTransport.close();
     this.files.close();
     this.signal?.disconnect();
-    for (const socket of this.relays.values()) socket.disconnect();
-    this.relays.clear();
-    this.activeRelay = undefined;
+    this.relayPool.clear();
     this.signalState = "offline";
     this.peers = [];
     this.emit({ kind: "presence", peers: [], profiles: [] });

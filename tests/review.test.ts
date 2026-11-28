@@ -13,8 +13,8 @@ import {
   type PeerConfig,
   type StoredMessage,
 } from "../src/shared/index.ts";
-import { MessageDelivery } from "../src/shared/messageDelivery.ts";
-import { WebStore } from "../src/web-peer/store.ts";
+import { MessageDelivery } from "../src/shared/chat/messageDelivery.ts";
+import { WebStore } from "../src/web-peer/storage/store.ts";
 import { createSignaling } from "../src/signaling/index.ts";
 import { createRelay } from "../src/relay/index.ts";
 

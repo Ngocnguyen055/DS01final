@@ -1,4 +1,4 @@
-import { randomUUID } from "./uuid.ts";
+import { randomUUID } from "../uuid.ts";
 import {
   MAX_DELIVERY_ATTEMPTS,
   parseMessage,
@@ -9,8 +9,8 @@ import {
   type DeliveryMode,
   type Group,
   type FileChunk,
-} from "./protocol.ts";
-import type { ChatStore, PeerEvent } from "./peerTypes.ts";
+} from "../protocol.ts";
+import type { ChatStore, PeerEvent } from "../peerTypes.ts";
 type PendingAck = {
   resolve: () => void;
   reject: (error: Error) => void;
@@ -607,7 +607,7 @@ export class MessageDelivery {
         this.queuedUpdates.delete(key);
     }
   }
-  private watchQueued(row: import("./peerTypes.ts").StoredMessage) {
+  private watchQueued(row: import("../peerTypes.ts").StoredMessage) {
     const m = row.message,
       key = `${m.messageId}:${m.receiverId}`,
       deadline = row.queuedUntil!;

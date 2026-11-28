@@ -15,166 +15,22 @@ import {
   type DeviceIdentity,
   type PublicIdentity,
   type IdentityStore,
-} from "../shared/secure.ts";
-import { z } from "zod";
-import { chatAttachmentSchema, messageSchema } from "../shared/protocol.ts";
+} from "../../shared/secure.ts";
 import {
   callRecordSchema,
   recoverCallRecords,
   type CallRecord,
 } from "./callHistory.ts";
-import { encodeBytes, decodeBytes } from "./accountCrypto.ts";
+import { encodeBytes, decodeBytes } from "../account/accountCrypto.ts";
 
-const rowSchema = z
-  .object({
-    message: messageSchema,
-    status: z.enum([
-      "pending",
-      "sent",
-      "forwarded",
-      "queued",
-      "delivered",
-      "failed",
-      "received",
-    ]),
-    queuedUntil: z.number().int().positive().optional(),
-  })
-  .strict();
-export const accountSnapshotSchema = z
-  .object({
-    v: z.literal(1),
-    peerId: peerIdSchema,
-    rows: z.array(rowSchema).max(1000),
-    contacts: z
-      .array(
-        z
-          .object({
-            peerId: peerIdSchema,
-            name: z.string().max(80),
-            email: z.string().max(254),
-            updatedAt: z.number().int().nonnegative(),
-          })
-          .strict(),
-      )
-      .max(500),
-    blocked: z.array(peerIdSchema).max(10000),
-    blockEdits: z
-      .record(
-        peerIdSchema,
-        z.object({ blocked: z.boolean(), at: z.number().int().nonnegative() }),
-      )
-      .default({}),
-    deleted: z.array(z.string().max(120)).max(10000),
-    seen: z.array(z.string().max(80)).max(10000),
-    calls: z.array(callRecordSchema).max(1000).default([]),
-    groupNames: z.record(z.string().uuid(), z.string().max(100)),
-    pins: z.record(peerIdSchema, publicIdentitySchema),
-    files: z
-      .array(
-        z
-          .object({
-            file: chatAttachmentSchema,
-            data: z
-              .string()
-              .max(12 * 1024 * 1024)
-              .regex(/^[A-Za-z0-9+/]*={0,2}$/),
-          })
-          .strict(),
-      )
-      .max(1000),
-  })
-  .strict();
-export type AccountSnapshot = z.infer<typeof accountSnapshotSchema>;
-const rowId = (row: StoredMessage) =>
-  `${row.message.senderId}:${row.message.messageId}:${row.message.receiverId}`;
-export function mergeAccountSnapshots(
-  local: AccountSnapshot,
-  remote: AccountSnapshot,
-): AccountSnapshot {
-  if (local.peerId !== remote.peerId)
-    throw Error("Bản sao thuộc tài khoản khác.");
-  const deleted = new Set([...remote.deleted, ...local.deleted]),
-    rows = new Map<string, StoredMessage>();
-  const priority: Record<MessageStatus, number> = {
-    pending: 0,
-    sent: 1,
-    forwarded: 2,
-    queued: 3,
-    failed: 4,
-    delivered: 5,
-    received: 5,
-  };
-  for (const row of [...remote.rows, ...local.rows]) {
-    if (
-      row.message.senderId !== local.peerId &&
-      row.message.receiverId !== local.peerId
-    )
-      throw Error("Lịch sử chứa tin nhắn của tài khoản khác.");
-    const id = rowId(row),
-      previous = rows.get(id);
-    if (previous && !sameMessageEvent(previous.message, row.message))
-      throw Error("Bản sao chứa Message ID có nội dung xung đột.");
-    if (
-      !deleted.has(id) &&
-      (!previous || priority[row.status] >= priority[previous.status])
-    )
-      rows.set(id, row);
-  }
-  const contacts = new Map<string, DirectChatContact>();
-  for (const contact of [...remote.contacts, ...local.contacts])
-    if (
-      !contacts.has(contact.peerId) ||
-      contacts.get(contact.peerId)!.updatedAt <= contact.updatedAt
-    )
-      contacts.set(contact.peerId, contact);
-  const files = new Map(
-    [...remote.files, ...local.files].map((value) => [value.file.id, value]),
-  );
-  const blockEdits = { ...remote.blockEdits };
-  for (const [id, edit] of Object.entries(local.blockEdits))
-    if (!blockEdits[id] || edit.at >= blockEdits[id].at) blockEdits[id] = edit;
-  const blocked = new Set([...remote.blocked, ...local.blocked]);
-  for (const [id, edit] of Object.entries(blockEdits)) {
-    if (edit.blocked) blocked.add(id);
-    else blocked.delete(id);
-  }
-  const calls = new Map(
-    [...remote.calls, ...local.calls].map((call) => [call.id, call]),
-  );
-  for (const call of remote.calls)
-    if (call.updatedAt > (calls.get(call.id)?.updatedAt || 0))
-      calls.set(call.id, call);
-  const finalRows = orderMessages([...rows.values()]).slice(-1000),
-    usedFiles = new Set(
-      finalRows.flatMap(
-        (row) => row.message.attachments?.map((file) => file.id) || [],
-      ),
-    );
-  let fileBudget = 8 * 1024 * 1024;
-  const snapshotFiles = [...usedFiles].reverse().flatMap((id) => {
-    const file = files.get(id);
-    if (!file || file.file.size > fileBudget) return [];
-    fileBudget -= file.file.size;
-    return [file];
-  });
-  return accountSnapshotSchema.parse({
-    ...remote,
-    ...local,
-    rows: finalRows,
-    calls: [...calls.values()]
-      .filter((call) => !deleted.has("call:" + call.id))
-      .sort((a, b) => a.startedAt - b.startedAt)
-      .slice(-1000),
-    contacts: [...contacts.values()].slice(-500),
-    blocked: [...blocked],
-    blockEdits,
-    deleted: [...deleted].slice(-10000),
-    seen: [...new Set([...remote.seen, ...local.seen])].slice(-10000),
-    groupNames: { ...remote.groupNames, ...local.groupNames },
-    pins: { ...remote.pins, ...local.pins },
-    files: snapshotFiles,
-  });
-}
+import {
+  accountSnapshotSchema,
+  mergeAccountSnapshots,
+  rowId,
+  type AccountSnapshot,
+} from "./accountSnapshot.ts";
+import { accessSecurityKey, getStoredFile, putStoredFile } from "./browserDatabase.ts";
+
 export class WebStore implements DirectChatStore, IdentityStore {
   private contactWrites = Promise.resolve();
   private revision = 0;
@@ -524,99 +380,32 @@ export class WebStore implements DirectChatStore, IdentityStore {
     const records = recoverCallRecords(this.listCalls());
     for (const record of records) this.putCall(record);
   }
-  private async files(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open("ds01-files-v1", 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("files");
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
-  }
-  private async security(key: string, value?: unknown): Promise<unknown> {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open("ds01-security-v1", 1);
-      request.onupgradeneeded = () => request.result.createObjectStore("keys");
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    try {
-      return await new Promise((resolve, reject) => {
-        const tx = db.transaction(
-            "keys",
-            value === undefined ? "readonly" : "readwrite",
-          ),
-          store = tx.objectStore("keys");
-        const request =
-          value === undefined
-            ? store.get(`${this.scope}:${key}`)
-            : store.put(value, `${this.scope}:${key}`);
-        let result: unknown;
-        request.onsuccess = () => {
-          result = request.result;
-        };
-        tx.oncomplete = () => resolve(result);
-        tx.onerror = () => reject(tx.error);
-        tx.onabort = () =>
-          reject(tx.error || Error("security key storage failed"));
-      });
-    } finally {
-      db.close();
-    }
-  }
   async getIdentity() {
-    return (await this.security("identity")) as DeviceIdentity | undefined;
+    return (await accessSecurityKey(this.scope, "identity")) as DeviceIdentity | undefined;
   }
   async putIdentity(value: DeviceIdentity) {
-    await this.security("identity", value);
+    await accessSecurityKey(this.scope, "identity", value);
   }
   async getAccountKeys() {
-    return (await this.security("account-keys")) as
+    return (await accessSecurityKey(this.scope, "account-keys")) as
       { vaultId: string; key: CryptoKey } | undefined;
   }
   async putAccountKeys(vaultId: string, key: CryptoKey) {
-    await this.security("account-keys", { vaultId, key });
+    await accessSecurityKey(this.scope, "account-keys", { vaultId, key });
   }
   async getPin(peerId: string) {
-    const value = await this.security(`pin:${peerId}`);
+    const value = await accessSecurityKey(this.scope, `pin:${peerId}`);
     return value ? publicIdentitySchema.parse(value) : undefined;
   }
   async putPin(peerId: string, value: PublicIdentity) {
-    await this.security(`pin:${peerId}`, publicIdentitySchema.parse(value));
+    await accessSecurityKey(this.scope, `pin:${peerId}`, publicIdentitySchema.parse(value));
   }
-  async putFile(file: ChatAttachment, data: Uint8Array): Promise<void> {
-    const db = await this.files();
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction("files", "readwrite");
-        tx.objectStore("files").put({ file, data }, `${this.scope}:${file.id}`);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-        tx.onabort = () =>
-          reject(tx.error || new Error("file storage aborted"));
-      });
-      this.notify();
-    } finally {
-      db.close();
-    }
+  async putFile(file: ChatAttachment, data: Uint8Array) {
+    await putStoredFile(this.scope, file, data);
+    this.notify();
   }
-  async getFile(fileId: string): Promise<
-    | {
-        file: ChatAttachment;
-        data: Uint8Array;
-      }
-    | undefined
-  > {
-    const db = await this.files();
-    try {
-      return await new Promise((resolve, reject) => {
-        const tx = db.transaction("files", "readonly");
-        const request = tx.objectStore("files").get(`${this.scope}:${fileId}`);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
-      });
-    } finally {
-      db.close();
-    }
+  async getFile(fileId: string) {
+    return getStoredFile(this.scope, fileId);
   }
   async snapshot(attempt = 0): Promise<AccountSnapshot> {
     await this.contactWrites;

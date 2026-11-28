@@ -9,7 +9,7 @@ import {
   parseMessage,
   type ChatMessage,
 } from "../src/shared/protocol.ts";
-import { MessageDelivery } from "../src/shared/messageDelivery.ts";
+import { MessageDelivery } from "../src/shared/chat/messageDelivery.ts";
 import type {
   ChatStore,
   PeerEvent,

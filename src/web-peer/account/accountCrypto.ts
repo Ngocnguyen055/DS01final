@@ -3,12 +3,12 @@ import {
   encryptedBackupSchema,
   type AccountVault,
   type EncryptedBackup,
-} from "../shared/accountProtocol.ts";
+} from "../../shared/accountProtocol.ts";
 import {
   canonical,
   publicIdentitySchema,
   type DeviceIdentity,
-} from "../shared/secure.ts";
+} from "../../shared/secure.ts";
 import { z } from "zod";
 
 const utf8 = (value: string) => new TextEncoder().encode(value);

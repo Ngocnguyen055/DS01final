@@ -11,7 +11,7 @@ import {
 } from "../src/shared/index.ts";
 import { createSignaling } from "../src/signaling/index.ts";
 import { createRelay } from "../src/relay/index.ts";
-import { WebStore } from "../src/web-peer/store.ts";
+import { WebStore } from "../src/web-peer/storage/store.ts";
 
 class MemoryStore implements ChatStore {
   rows: StoredMessage[] = [];

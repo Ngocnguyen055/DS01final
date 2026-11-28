@@ -15,10 +15,10 @@ import {
   type StoredMessage,
   type PeerConfig,
 } from "../src/shared/index.ts";
-import { MessageDelivery } from "../src/shared/messageDelivery.ts";
-import { FileTransfer, fileHash } from "../src/shared/fileTransfer.ts";
-import { WebStore } from "../src/web-peer/store.ts";
-import { DirectTransport } from "../src/shared/directTransport.ts";
+import { MessageDelivery } from "../src/shared/chat/messageDelivery.ts";
+import { FileTransfer, fileHash } from "../src/shared/chat/fileTransfer.ts";
+import { WebStore } from "../src/web-peer/storage/store.ts";
+import { DirectTransport } from "../src/shared/transport/directTransport.ts";
 class MemoryStore implements ChatStore {
   rows: StoredMessage[] = [];
   files = new Map<

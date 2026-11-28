@@ -6,7 +6,7 @@ import {
   type PeerConfig,
   type PeerEvent,
 } from "../src/shared/index.ts";
-import { WebStore } from "../src/web-peer/store.ts";
+import { WebStore } from "../src/web-peer/storage/store.ts";
 import { createSignaling } from "../src/signaling/index.ts";
 import { createRelay } from "../src/relay/index.ts";
 

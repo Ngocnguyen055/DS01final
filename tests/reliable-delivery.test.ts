@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
-import { MessageDelivery } from "../src/shared/messageDelivery.ts";
+import { MessageDelivery } from "../src/shared/chat/messageDelivery.ts";
 import {
   MAX_DELIVERY_ATTEMPTS,
   parseMessage,
@@ -11,7 +11,7 @@ import type {
   PeerEvent,
   StoredMessage,
 } from "../src/shared/peerTypes.ts";
-import { WebStore } from "../src/web-peer/store.ts";
+import { WebStore } from "../src/web-peer/storage/store.ts";
 
 class MemoryStore implements ChatStore {
   rows: StoredMessage[] = [];

@@ -132,7 +132,7 @@ describe("signaling registration recovery", () => {
     await until(() => waiting);
     interrupt(signal, a.client);
     await until(() => state(a)?.signaling === "online" && state(a)?.relays === 1);
-    const relays = () => [...(a.client as unknown as { relays: Map<string, Socket> }).relays.values()];
+    const relays = () => [...(a.client as unknown as { relayPool: { sockets: Map<string, Socket> } }).relayPool.sockets.values()];
     const [relay] = relays();
     release();
     await delay(100);

@@ -326,7 +326,11 @@ try {
     await call("Runtime.enable", {}, sessionId);
     await call("Page.enable", {}, sessionId);
     await until(
-      () => evaluate(sessionId, 'document.readyState === "complete"'),
+      () =>
+        evaluate(
+          sessionId,
+          `location.origin === ${JSON.stringify(webUrl)} && document.readyState === "complete"`,
+        ),
       "page",
     );
     if (id === "peer-a" && !publicRelays) {
@@ -360,7 +364,7 @@ try {
     }
     await evaluate(
       sessionId,
-      `(async()=>{const {PeerClient}=await import('/@fs/'+${JSON.stringify(root.replaceAll("\\", "/") + "/src/shared/peer.ts")});const {WebStore}=await import('/store.ts');window.Peer=PeerClient;window.Store=WebStore;window.rtc=[];window.wire=[];window.events=[];const Native=RTCPeerConnection;window.RTC=class extends Native{constructor(...a){super(...a);window.rtc.push(this);this.addEventListener('icecandidateerror',e=>window.events.push({kind:'log',text:e.errorCode+':'+e.errorText}))}};const send=RTCDataChannel.prototype.send;RTCDataChannel.prototype.send=function(d){window.wire.push(JSON.parse(d));return send.call(this,d)};window.config={peerId:${JSON.stringify(id)},identityProof:'advanced-browser-'+${JSON.stringify(id)},displayName:${JSON.stringify(id)},signalUrl:${JSON.stringify(signalUrl)},relayUrl:${JSON.stringify(relayUrls[0])},relayUrls:[${JSON.stringify(relayUrls[1])}],rtc:RTC,store:new WebStore(${JSON.stringify(id)}),identityStore:new WebStore(${JSON.stringify(id)}),encryption:true,relaySelection:'latency-load',iceServers:[{urls:${JSON.stringify(`turn:127.0.0.1:${tp}?transport=udp`)},username:${JSON.stringify(username)},credential:${JSON.stringify(credential)}}],rtcPolicy:'relay',directTimeoutMs:8000,ackTimeoutMs:2000,onEvent:e=>{window.events.push(e);if(e.kind==='call')window.lastCall=e.call;if(e.kind==='group-call'){window.groupCall=e.groupCall;window.groupRooms=e.groupCalls;}}};window.peer=new PeerClient(config);await peer.connect();return true})()`,
+      `(async()=>{const {PeerClient}=await import('/@fs/'+${JSON.stringify(join(root, "src/shared/peer.ts").replaceAll("\\", "/"))});const {WebStore}=await import('/storage/store.ts');window.Peer=PeerClient;window.Store=WebStore;window.rtc=[];window.wire=[];window.events=[];const Native=RTCPeerConnection;window.RTC=class extends Native{constructor(...a){super(...a);window.rtc.push(this);this.addEventListener('icecandidateerror',e=>window.events.push({kind:'log',text:e.errorCode+':'+e.errorText}))}};const send=RTCDataChannel.prototype.send;RTCDataChannel.prototype.send=function(d){window.wire.push(JSON.parse(d));return send.call(this,d)};window.config={peerId:${JSON.stringify(id)},identityProof:'advanced-browser-'+${JSON.stringify(id)},displayName:${JSON.stringify(id)},signalUrl:${JSON.stringify(signalUrl)},relayUrl:${JSON.stringify(relayUrls[0])},relayUrls:[${JSON.stringify(relayUrls[1])}],rtc:RTC,store:new WebStore(${JSON.stringify(id)}),identityStore:new WebStore(${JSON.stringify(id)}),encryption:true,relaySelection:'latency-load',iceServers:[{urls:${JSON.stringify(`turn:127.0.0.1:${tp}?transport=udp`)},username:${JSON.stringify(username)},credential:${JSON.stringify(credential)}}],rtcPolicy:'relay',directTimeoutMs:8000,ackTimeoutMs:2000,onEvent:e=>{window.events.push(e);if(e.kind==='call')window.lastCall=e.call;if(e.kind==='group-call'){window.groupCall=e.groupCall;window.groupRooms=e.groupCalls;}}};window.peer=new PeerClient(config);await peer.connect();return true})()`,
     );
   }
   diagnose = async () => {

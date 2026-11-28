@@ -1,4 +1,4 @@
-import type { ChatMessage } from "./protocol.ts";
+import type { ChatMessage } from "../protocol.ts";
 
 export function isDirectMessageBetween(
   message: ChatMessage,

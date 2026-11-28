@@ -10,7 +10,7 @@ import {
   unlockAccountVault,
   sealAccountData,
   openAccountData,
-} from "../src/web-peer/accountCrypto.ts";
+} from "../src/web-peer/account/accountCrypto.ts";
 import { createIdentity, canonical } from "../src/shared/secure.ts";
 import {
   prepareData,

@@ -326,7 +326,11 @@ try {
     await call("Runtime.enable", {}, sessionId);
     await call("Page.enable", {}, sessionId);
     await until(
-      () => evaluate(sessionId, 'document.readyState === "complete"'),
+      () =>
+        evaluate(
+          sessionId,
+          `location.origin === ${JSON.stringify(webUrl)} && document.readyState === "complete"`,
+        ),
       "page",
     );
     if (id === "peer-a" && !publicRelays) {
@@ -360,7 +364,7 @@ try {
     }
     await evaluate(
       sessionId,
-      `(async()=>{const {PeerClient}=await import('/@fs/'+${JSON.stringify(root.replaceAll("\\", "/") + "/src/shared/peer.ts")});const {WebStore}=await import('/store.ts');window.Peer=PeerClient;window.Store=WebStore;window.rtc=[];window.wire=[];window.events=[];const Native=RTCPeerConnection;window.RTC=class extends Native{constructor(...a){super(...a);window.rtc.push(this);this.addEventListener('icecandidateerror',e=>window.events.push({kind:'log',text:e.errorCode+':'+e.errorText}))}};const send=RTCDataChannel.prototype.send;RTCDataChannel.prototype.send=function(d){window.wire.push(JSON.parse(d));return send.call(this,d)};window.config={peerId:${JSON.stringify(id)},identityProof:'advanced-browser-'+${JSON.stringify(id)},displayName:${JSON.stringify(id)},signalUrl:${JSON.stringify(signalUrl)},relayUrl:${JSON.stringify(relayUrls[0])},relayUrls:[${JSON.stringify(relayUrls[1])}],rtc:RTC,store:new WebStore(${JSON.stringify(id)}),identityStore:new WebStore(${JSON.stringify(id)}),encryption:true,relaySelection:'latency-load',iceServers:[{urls:${JSON.stringify(`turn:127.0.0.1:${tp}?transport=udp`)},username:${JSON.stringify(username)},credential:${JSON.stringify(credential)}}],rtcPolicy:'relay',directTimeoutMs:8000,ackTimeoutMs:2000,onEvent:e=>{window.events.push(e);if(e.kind==='call')window.lastCall=e.call;}};window.peer=new PeerClient(config);await peer.connect();return true})()`,
+      `(async()=>{const {PeerClient}=await import('/@fs/'+${JSON.stringify(join(root, "src/shared/peer.ts").replaceAll("\\", "/"))});const {WebStore}=await import('/storage/store.ts');window.Peer=PeerClient;window.Store=WebStore;window.rtc=[];window.wire=[];window.events=[];const Native=RTCPeerConnection;window.RTC=class extends Native{constructor(...a){super(...a);window.rtc.push(this);this.addEventListener('icecandidateerror',e=>window.events.push({kind:'log',text:e.errorCode+':'+e.errorText}))}};const send=RTCDataChannel.prototype.send;RTCDataChannel.prototype.send=function(d){window.wire.push(JSON.parse(d));return send.call(this,d)};window.config={peerId:${JSON.stringify(id)},identityProof:'advanced-browser-'+${JSON.stringify(id)},displayName:${JSON.stringify(id)},signalUrl:${JSON.stringify(signalUrl)},relayUrl:${JSON.stringify(relayUrls[0])},relayUrls:[${JSON.stringify(relayUrls[1])}],rtc:RTC,store:new WebStore(${JSON.stringify(id)}),identityStore:new WebStore(${JSON.stringify(id)}),encryption:true,relaySelection:'latency-load',iceServers:[{urls:${JSON.stringify(`turn:127.0.0.1:${tp}?transport=udp`)},username:${JSON.stringify(username)},credential:${JSON.stringify(credential)}}],rtcPolicy:'relay',directTimeoutMs:8000,ackTimeoutMs:2000,onEvent:e=>{window.events.push(e);if(e.kind==='call')window.lastCall=e.call;}};window.peer=new PeerClient(config);await peer.connect();return true})()`,
     );
   }
   const [a, b, c] = pages,
@@ -498,7 +502,7 @@ try {
   for (const page of [a, b]) {
     await evaluate(
       page,
-      `(async()=>{peer.close();window.peer=new Peer({...config,simulateMediaIceFailure:true});window.relayWire=[];for(const s of peer.relays.values())s.on('media:frame',x=>relayWire.push(x));await peer.connect();for(const s of peer.relays.values())s.on('media:frame',x=>relayWire.push(x));})()`,
+      `(async()=>{peer.close();window.peer=new Peer({...config,simulateMediaIceFailure:true});window.relayWire=[];for(const s of peer.relayPool.sockets.values())s.on('media:frame',x=>relayWire.push(x));await peer.connect();for(const s of peer.relayPool.sockets.values())s.on('media:frame',x=>relayWire.push(x));})()`,
     );
   }
   const mediaBefore = (await (await fetch(relayUrls[0] + "/health")).json())
@@ -687,7 +691,7 @@ try {
     );
     const restored = await evaluate(
       a,
-      `(async()=>{const {WebStore}=await import('/store.ts');return (await new WebStore('peer-a').getIdentity()).public})()`,
+      `(async()=>{const {WebStore}=await import('/storage/store.ts');return (await new WebStore('peer-a').getIdentity()).public})()`,
     );
     check(
       "nonextractable device identity persists across browser reload",

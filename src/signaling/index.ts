@@ -24,7 +24,7 @@ import { projectRoot, dataRoot } from "../server-kit/storagePaths.mjs";
 import { join, dirname } from "node:path";
 import { AccountData, registerAccountData } from "./accountData.ts";
 import { GroupCalls } from "./groupCalls.ts";
-import { groupCallContextSchema } from "../shared/groupCallProtocol.ts";
+import { groupCallContextSchema } from "../shared/media/groupCallProtocol.ts";
 import { peerIdSchema } from "@ds01/shared";
 export type { DirectChatAuthorizer } from "./types.ts";
 if (process.env.NODE_ENV !== "test")

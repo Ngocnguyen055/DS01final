@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   DirectTransport,
   type SignalKind,
-} from "../src/shared/directTransport.ts";
+} from "../src/shared/transport/directTransport.ts";
 import type { RTCFactory } from "../src/shared/peerTypes.ts";
 
 const transports: DirectTransport[] = [];

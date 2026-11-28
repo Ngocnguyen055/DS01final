@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { peerIdSchema } from "../shared/protocol.ts";
-import type { CallState } from "../shared/media.ts";
-import type { GroupCallState } from "../shared/groupCallProtocol.ts";
+import { peerIdSchema } from "../../shared/protocol.ts";
+import type { CallState } from "../../shared/media/media.ts";
+import type { GroupCallState } from "../../shared/media/groupCallProtocol.ts";
 
 export const callRecordSchema = z
   .object({

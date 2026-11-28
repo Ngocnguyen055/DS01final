@@ -9,11 +9,11 @@ import {
   MediaSession,
   type CallState,
   type MediaSignal,
-} from "../src/shared/media.ts";
+} from "../src/shared/media/media.ts";
 import {
   mediaFrameSchema,
   type MediaFrame,
-} from "../src/shared/mediaProtocol.ts";
+} from "../src/shared/media/mediaProtocol.ts";
 import type { RTCFactory } from "../src/shared/peerTypes.ts";
 
 const cleanup: (() => void | Promise<void>)[] = [];

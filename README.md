@@ -20,6 +20,18 @@ src/
 - Lịch sử web lưu trong localStorage theo Peer ID, file và khóa hoạt động trong IndexedDB. Chế độ tài khoản có thêm bản sao mã hóa để khôi phục trên thiết bị hoặc địa chỉ web mới; chế độ Peer ID/DHT giữ dữ liệu tại thiết bị.
 - Demo với ID `peer-a`, `peer-b`, `peer-c` không cần MongoDB hoặc Mobile API.
 
+## Mở code theo luồng
+
+| Cần xem | Điểm vào |
+| --- | --- |
+| Danh sách, khung chat và nhật ký peer | [components/chat](src/web-peer/components/chat) và [ConnectionDiagnostics.tsx](src/web-peer/components/connection/ConnectionDiagnostics.tsx) |
+| Đăng nhập, nhận event và làm mới giao diện | [usePeerSession.ts](src/web-peer/hooks/usePeerSession.ts) gọi `refresh()` trong [useConversations.ts](src/web-peer/hooks/useConversations.ts) |
+| Lưu lịch sử cục bộ | `put()` → `write()` trong [store.ts](src/web-peer/storage/store.ts) |
+| Gửi nhóm, ACK và gửi lại | [messageDelivery.ts](src/shared/chat/messageDelivery.ts) |
+| Chọn đường gửi | [peer.ts](src/shared/peer.ts) chọn mode, [directTransport.ts](src/shared/transport/directTransport.ts) mở WebRTC và [relayPool.ts](src/shared/transport/relayPool.ts) chọn relay |
+| Chuyển tin và ghi `FORWARD` | `relay:send`, `forward()` và `drainMailbox()` trong [chatForwarding.ts](src/relay/chatForwarding.ts) |
+| Cuộc gọi và luồng âm thanh/video | [shared/media](src/shared/media) ở peer và [relay/media.ts](src/relay/media.ts) ở relay |
+
 ## Yêu cầu
 
 - Node.js `^20.19.0 || >=22.12.0`; dùng Node 22.12+ để chạy cả browser QA.

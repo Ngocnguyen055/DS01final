@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { useWebPeer } from "./useWebPeer.ts";
+import type { useWebPeer } from "../../hooks/useWebPeer.ts";
 
 export function AdvancedPanel({
   peer: p,

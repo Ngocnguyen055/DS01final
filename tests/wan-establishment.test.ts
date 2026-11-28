@@ -9,8 +9,8 @@ import {
   type PeerEvent,
   type StoredMessage,
 } from "../src/shared/index.ts";
-import { DirectTransport } from "../src/shared/directTransport.ts";
-import { MessageDelivery } from "../src/shared/messageDelivery.ts";
+import { DirectTransport } from "../src/shared/transport/directTransport.ts";
+import { MessageDelivery } from "../src/shared/chat/messageDelivery.ts";
 import { createSignaling } from "../src/signaling/index.ts";
 import { createRelay } from "../src/relay/index.ts";
 

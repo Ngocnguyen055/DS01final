@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { orderMessages } from "../src/shared/ordering.ts";
+import { orderMessages } from "../src/shared/chat/ordering.ts";
 import type { StoredMessage } from "../src/shared/peerTypes.ts";
-import { chatTimeline } from "../src/web-peer/chatTimeline.ts";
-import type { CallRecord } from "../src/web-peer/callHistory.ts";
+import { chatTimeline } from "../src/web-peer/components/chat/chatTimeline.ts";
+import type { CallRecord } from "../src/web-peer/storage/callHistory.ts";
 
 const sessionId = randomUUID(),
   groupId = randomUUID();

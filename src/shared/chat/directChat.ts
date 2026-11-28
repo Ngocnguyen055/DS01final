@@ -2,13 +2,13 @@ import {
   peerIdSchema,
   type ChatAttachment,
   type PeerDiscovery,
-} from "./protocol.ts";
+} from "../protocol.ts";
 import {
   PeerClient,
   type DirectChatContact,
   type DirectChatStore,
   type StoredMessage,
-} from "./peer.ts";
+} from "../peer.ts";
 
 export class DirectChatService {
   constructor(

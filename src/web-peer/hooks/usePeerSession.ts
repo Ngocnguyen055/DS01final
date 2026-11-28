@@ -1,36 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   PeerClient,
-  isDirectMessageBetween,
   peerIdSchema,
   type Group,
-  type StoredMessage,
   type PeerEvent,
   type PeerProfile,
-  type ChatAttachment,
-  type DirectChatContact,
 } from "@ds01/shared";
-import { DEFAULT_ICE_SERVERS } from "../shared/iceRoute.ts";
-import { MAX_CHAT_ATTACHMENT_BYTES } from "../shared/protocol.ts";
+import { DEFAULT_ICE_SERVERS } from "../../shared/transport/iceRoute.ts";
 import {
   privateCallRecord,
   groupCallRecord,
-  type CallRecord,
-} from "./callHistory.ts";
-import { WebStore } from "./store.ts";
-import { authRequest, sessionKey, type LoginSession } from "./auth.ts";
+} from "../storage/callHistory.ts";
+import { WebStore } from "../storage/store.ts";
+import { authRequest, sessionKey, type LoginSession } from "../account/auth.ts";
 import {
   createIdentity,
   decentralizedPeerId,
   fingerprint,
-} from "../shared/advancedExports.ts";
-import type { CallState } from "../shared/media.ts";
+} from "../../shared/advancedExports.ts";
+import type { CallState } from "../../shared/media/media.ts";
 import type {
   GroupCallRoom,
   GroupCallState,
-} from "../shared/groupCallProtocol.ts";
-import type { RelaySample } from "../shared/relaySelection.ts";
-import { AccountSync, type AccountSyncState } from "./accountSync.ts";
+} from "../../shared/media/groupCallProtocol.ts";
+import type { RelaySample } from "../../shared/transport/relaySelection.ts";
+import { AccountSync, type AccountSyncState } from "../account/accountSync.ts";
+import { useConversations } from "./useConversations.ts";
+
 const signalUrl = import.meta.env.VITE_SIGNAL_URL || "http://localhost:4001";
 const relayUrl = import.meta.env.VITE_RELAY_URL || "http://localhost:4002";
 const relayUrls = String(import.meta.env.VITE_RELAY_URLS || "")
@@ -54,15 +50,7 @@ function secretFor(id: string) {
   localStorage.setItem(key, secret);
   return secret;
 }
-export function saveDownload(name: string, blob: Blob) {
-  const url = URL.createObjectURL(blob),
-    link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-export function useWebPeer() {
+export function usePeerSession() {
   const [peerId, setPeerId] = useState(initialId),
     [displayName, setDisplayName] = useState(
       localStorage.getItem("ds01-display-name") || "",
@@ -72,26 +60,17 @@ export function useWebPeer() {
     [connecting, setConnecting] = useState(false);
   const [online, setOnline] = useState<string[]>([]),
     [profiles, setProfiles] = useState<PeerProfile[]>([]),
-    [contacts, setContacts] = useState<DirectChatContact[]>([]),
     [groups, setGroups] = useState<Group[]>([]);
-  const [target, setTarget] = useState(""),
-    [groupTarget, setGroupTarget] = useState(""),
-    [body, setBodyValue] = useState(""),
-    [forceRelay, setForceRelay] = useState(false);
+  const [forceRelay, setForceRelay] = useState(false);
   const [modes, setModes] = useState<Record<string, string>>({}),
-    [messages, setMessages] = useState<StoredMessage[]>([]),
-    [unreadConversations, setUnreadConversations] = useState<string[]>([]),
     [logs, setLogs] = useState<string[]>([]),
-    [error, setError] = useState(""),
-    [sending, setSending] = useState(false),
-    [blocked, setBlocked] = useState<string[]>([]);
+    [error, setError] = useState("");
   const [iceSummary, setIceSummary] = useState({
     stun: 0,
     turn: 0,
     policy: "all",
   });
-  const [calls, setCalls] = useState<CallRecord[]>([]),
-    [directReasons, setDirectReasons] = useState<Record<string, string>>({}),
+  const [directReasons, setDirectReasons] = useState<Record<string, string>>({}),
     [checkingDirect, setCheckingDirect] = useState(false);
   const [transfers, setTransfers] = useState<
     NonNullable<PeerEvent["transfer"]>[]
@@ -126,49 +105,22 @@ export function useWebPeer() {
   const client = useRef<PeerClient | null>(null),
     store = useRef(new WebStore(initialId)),
     generation = useRef(0);
-  const draftRevision = useRef(0);
-  const pendingSends = useRef(0);
-  const beginSending = () => {
-    pendingSends.current++;
-    setSending(true);
-    return generation.current;
-  };
-  const finishSending = (version: number) => {
-    if (generation.current !== version) return;
-    pendingSends.current = Math.max(0, pendingSends.current - 1);
-    setSending(pendingSends.current > 0);
-    void refresh();
-  };
-  const setBody = (value: string) => {
-    draftRevision.current++;
-    setBodyValue(value);
-  };
-  const refresh = useCallback(async () => {
-    const active = store.current;
-    try {
-      const [rows, savedContacts, blockedPeers] = await Promise.all([
-        active.list(),
-        active.listDirectContacts(),
-        active.listDirectBlocked(),
-      ]);
-      if (active !== store.current) return;
-      setMessages(rows);
-      setUnreadConversations(active.listUnreadConversations());
-      setCalls(active.listCalls());
-      setContacts(savedContacts);
-      setBlocked(blockedPeers);
-    } catch (error) {
-      setError(String(error));
-    }
-  }, []);
-  const markConversationRead = useCallback((key: string) => {
-    try {
-      if (store.current.markConversationRead(key))
-        setUnreadConversations(store.current.listUnreadConversations());
-    } catch (error) {
-      setError(String(error));
-    }
-  }, []);
+  const { refresh, resetSending, resetConversations, ...conversations } =
+    useConversations({
+      client,
+      store,
+      generation,
+      peerId,
+      displayName,
+      hasSession,
+      connected: connection.signaling === "online",
+      online,
+      profiles,
+      groups,
+      setError,
+      canImportHistory: () => !!accountRef.current,
+      onHistoryImported: () => sync.current?.schedule(),
+    });
   useEffect(() => {
     let disposed = false;
     const saved = sessionStorage.getItem(sessionKey);
@@ -243,8 +195,7 @@ export function useWebPeer() {
     setError("");
     setConnecting(true);
     const version = ++generation.current;
-    pendingSends.current = 0;
-    setSending(false);
+    resetSending();
     client.current?.close();
     client.current = null;
     sync.current?.close();
@@ -472,7 +423,7 @@ export function useWebPeer() {
     setSyncState(undefined);
     syncOpening.current?.abort();
     syncOpening.current = null;
-    pendingSends.current = 0;
+    resetConversations();
     accountRef.current = null;
     setAccountSession(null);
     sessionStorage.removeItem(sessionKey);
@@ -486,23 +437,14 @@ export function useWebPeer() {
     setSecurityFingerprint("");
     setHasSession(false);
     setConnecting(false);
-    setSending(false);
     setConnection(initialConnection);
     setOnline([]);
     setProfiles([]);
-    setMessages([]);
-    setUnreadConversations([]);
-    setCalls([]);
     setDirectReasons({});
-    setContacts([]);
     setGroups([]);
-    setBlocked([]);
     setTransfers([]);
     setModes({});
     setSimulateMediaIceFailure(false);
-    setTarget("");
-    setGroupTarget("");
-    setBody("");
     setLogs([]);
     setPeerId("");
     setDisplayName("");
@@ -578,204 +520,6 @@ export function useWebPeer() {
     );
     return () => clearTimeout(timer);
   }, [accountSession]);
-  const send = async () => {
-    if (pendingSends.current || !body.trim()) return;
-    const text = body;
-    const revision = draftRevision.current,
-      version = generation.current;
-    setError("");
-    beginSending();
-    try {
-      if (!client.current || !hasSession)
-        throw new Error("Hãy kết nối trước khi gửi");
-      if (groupTarget) {
-        const result = await client.current.sendGroup(groupTarget, text);
-        const failed = Object.entries(result).filter(
-          ([, status]) => status === "rejected",
-        );
-        if (failed.length && generation.current === version)
-          setError(
-            `Chưa giao được tới: ${failed.map(([id]) => id).join(", ")}`,
-          );
-      } else await client.current.sendDirect(target, text);
-      if (generation.current === version && draftRevision.current === revision)
-        setBody("");
-    } catch (error) {
-      if (generation.current === version) setError(String(error));
-    } finally {
-      finishSending(version);
-    }
-  };
-  const createGroup = async (name: string, members: string) => {
-    if (!client.current) throw new Error("Hãy kết nối trước");
-    const group = await client.current.createGroup(
-      members
-        .split(",")
-        .map((value) => value.trim())
-        .filter(Boolean),
-      name,
-    );
-    setGroupTarget(group.id);
-    setTarget("");
-    return group;
-  };
-  const changeGroup = async (memberId: string, action: "add" | "remove") => {
-    try {
-      if (!client.current) throw new Error("Hãy kết nối trước");
-      await client.current.changeGroup(groupTarget, memberId, action);
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const openPeer = async (id: string) => {
-    peerIdSchema.parse(id);
-    if (id === peerId) throw new Error("Chọn một peer khác");
-    if (client.current && connection.signaling === "online")
-      await client.current.lookupPeer(id);
-    await store.current.saveDirectContact({
-      peerId: id,
-      name:
-        profiles.find((profile) => profile.peerId === id)?.displayName ||
-        contacts.find((contact) => contact.peerId === id)?.name ||
-        id,
-      email: "",
-      updatedAt: Date.now(),
-    });
-    setTarget(id);
-    setGroupTarget("");
-    await refresh();
-  };
-  const toggleForceRelay = (value: boolean) => {
-    setForceRelay(value);
-    if (client.current) client.current.forceRelay = value;
-  };
-  const retry = async (row: StoredMessage) => {
-    const version = beginSending();
-    try {
-      if (!client.current) throw new Error("Hãy kết nối trước");
-      await client.current.retry(row.message.messageId, row.message.receiverId);
-    } catch (error) {
-      if (generation.current === version) setError(String(error));
-    } finally {
-      finishSending(version);
-    }
-  };
-  const sendFile = async (file: File) => {
-    const version = beginSending();
-    try {
-      if (!client.current || (!target && !groupTarget))
-        throw new Error("Chọn cuộc trò chuyện để gửi file");
-      setError("");
-      if (file.size > MAX_CHAT_ATTACHMENT_BYTES)
-        throw new Error("File tối đa 20 MiB");
-      const data = new Uint8Array(await file.arrayBuffer());
-      if (groupTarget)
-        await client.current.sendGroupFile(
-          groupTarget,
-          file.name,
-          file.type,
-          data,
-        );
-      else await client.current.sendFile(target, file.name, file.type, data);
-    } catch (error) {
-      if (generation.current === version) setError(String(error));
-    } finally {
-      finishSending(version);
-    }
-  };
-  const downloadFile = async (file: ChatAttachment) => {
-    try {
-      const saved = await store.current.getFile(file.id);
-      if (!saved)
-        throw new Error(
-          "File chưa có trên thiết bị này. Bản sao tài khoản chỉ chứa tối đa 8 MiB file; hãy tải ở thiết bị đã nhận hoặc nhờ người gửi gửi lại.",
-        );
-      saveDownload(
-        file.name,
-        new Blob([new Uint8Array(saved.data).buffer], {
-          type: "application/octet-stream",
-        }),
-      );
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const toggleBlock = async () => {
-    if (!target) return;
-    try {
-      await store.current.setDirectBlocked(target, !blocked.includes(target));
-      await refresh();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const deleteHistory = async () => {
-    if (!target) return;
-    try {
-      await store.current.deleteDirect(target);
-      await refresh();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const visible = messages.filter((row) =>
-    groupTarget
-      ? row.message.groupId === groupTarget
-      : isDirectMessageBetween(row.message, peerId, target),
-  );
-  const exportHistory = async () => {
-    try {
-      const snapshot = await store.current.snapshot();
-      saveDownload(
-        `ds01-${groupTarget || target || peerId}.json`,
-        new Blob(
-          [
-            JSON.stringify(
-              {
-                ...snapshot,
-                rows: visible,
-                calls: calls.filter((call) =>
-                  groupTarget
-                    ? call.groupId === groupTarget
-                    : call.peerId === target,
-                ),
-              },
-              null,
-              2,
-            ),
-          ],
-          { type: "application/json" },
-        ),
-      );
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const exportLogs = () =>
-    saveDownload(
-      `ds01-peer-log-${peerId}-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`,
-      new Blob([logs.slice().reverse().join("\n")], { type: "text/plain" }),
-    );
-  const disconnectDirect = () => {
-    if (target && !client.current?.disconnectDirect(target))
-      setError("Không có kênh trực tiếp đang hoạt động với peer này.");
-  };
-  const retryDirect = async () => {
-    if (!target || !client.current || checkingDirect) return;
-    setCheckingDirect(true);
-    toggleForceRelay(false);
-    try {
-      const ready = await client.current.retryDirect(target);
-      if (!ready) setDirectReasons((current) => ({
-        ...current,
-        [target]: "Kênh trực tiếp chưa sẵn sàng. Relay đang duy trì cuộc trò chuyện; xem log để biết quá trình kết nối.",
-      }));
-    } catch (error) {
-      setError(String(error));
-    } finally {
-      setCheckingDirect(false);
-    }
-  };
   const connectDht = async () => {
     try {
       await connect(undefined, true);
@@ -783,146 +527,8 @@ export function useWebPeer() {
       setError(String(error));
     }
   };
-  const verifyPeerKey = async () => {
-    try {
-      if (!client.current || !target) return;
-      const key = await client.current.secure.inspectPeerIdentity(target),
-        code = await fingerprint(key);
-      if (
-        confirm(
-          `So sánh mã bảo mật này với ${nameOf(target)} qua một kênh khác:\n${code}\nChỉ xác nhận nếu hai bên thấy cùng mã. Chấp nhận khóa này?`,
-        )
-      ) {
-        await client.current.secure.acceptPeerIdentity(target, key);
-        sync.current?.schedule();
-        setError("");
-        log(`SECURITY_KEY_VERIFIED ${target}`);
-      }
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const importHistory = async (file?: File) => {
-    if (!file || !accountRef.current) return;
-    try {
-      if (file.size > 16 * 1024 * 1024)
-        throw Error("File lịch sử vượt 16 MiB.");
-      const value: unknown = JSON.parse(await file.text());
-      const current = await store.current.snapshot();
-      await store.current.restore(
-        Array.isArray(value) ? { ...current, rows: value } : value,
-      );
-      await refresh();
-      sync.current?.schedule();
-    } catch (error) {
-      setError(`Không nhập được lịch sử: ${String(error)}`);
-    }
-  };
-  const startCall = async (kind: "audio" | "video") => {
-    setCallStarting(true);
-    try {
-      if (!client.current || (!target && !groupTarget))
-        throw Error("Chọn cuộc trò chuyện để gọi.");
-      if (groupTarget) await client.current.groupMedia.start(groupTarget, kind);
-      else await client.current.media.start(target, kind);
-    } catch (error) {
-      setError(String(error));
-    } finally {
-      setCallStarting(false);
-    }
-  };
-  const joinGroupCall = async (roomId: string) => {
-    setCallStarting(true);
-    try {
-      await client.current?.groupMedia.join(roomId);
-    } catch (error) {
-      setError(String(error));
-    } finally {
-      setCallStarting(false);
-    }
-  };
-  const leaveGroupCall = async () => {
-    await client.current?.groupMedia.leave();
-  };
-  const muteGroupCall = (kind: "audio" | "video", muted: boolean) =>
-    client.current?.groupMedia.mute(kind, muted);
-  const resumeGroupAudio = () => client.current?.groupMedia.resumeAudio();
-  const dismissGroupCall = () => client.current?.groupMedia.dismiss();
-  const callBusy =
-    callStarting ||
-    (!!call && !["ended", "failed"].includes(call.phase)) ||
-    groupCall?.phase === "active" ||
-    groupCall?.phase === "joining";
-  const toggleMediaIceFailure = (value: boolean) => {
-    if (callBusy) return;
-    setSimulateMediaIceFailure(value);
-    if (client.current) client.current.simulateMediaIceFailure = value;
-  };
-  const acceptCall = async () => {
-    try {
-      await client.current?.media.accept();
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const endCall = async () => {
-    await client.current?.media.end();
-  };
-  const muteCall = (kind: "audio" | "video", muted: boolean) =>
-    client.current?.media.mute(kind, muted);
-  const resumeCallAudio = () => client.current?.media.resumeAudio();
-  const selectRelayPolicy = (policy: "priority" | "latency-load") => {
-    setRelayPolicy(policy);
-    client.current?.setRelaySelection(policy);
-  };
-  const volunteerSuperPeer = async (url: string) => {
-    try {
-      await client.current?.volunteerSuperPeer(url);
-    } catch (error) {
-      setError(String(error));
-    }
-  };
-  const knownPeers = [
-    ...new Set([
-      ...online,
-      ...contacts.map((contact) => contact.peerId),
-      ...messages.flatMap((row) =>
-        row.message.groupId
-          ? []
-          : [row.message.senderId, row.message.receiverId],
-      ),
-    ]),
-  ].filter((id) => id !== peerId);
-  const nameOf = (id: string) =>
-    profiles.find((profile) => profile.peerId === id)?.displayName ||
-    contacts.find((contact) => contact.peerId === id)?.name ||
-    (id === peerId ? displayName : id);
-  let names: Record<string, string> = {};
-  try {
-    names = JSON.parse(
-      localStorage.getItem(`ds01-group-names-${peerId}`) || "{}",
-    );
-  } catch {}
-  const historyGroups = [
-    ...new Set(
-      messages
-        .map((row) => row.message.groupId)
-        .filter((id): id is string => !!id),
-    ),
-  ]
-    .filter((id) => !groups.some((group) => group.id === id))
-    .map(
-      (id) =>
-        ({
-          id,
-          name: names[id] || `Nhóm ${id.slice(0, 8)}`,
-          ownerId: peerId,
-          members: [],
-          version: 0,
-          archived: true,
-        }) as Group,
-    );
   return {
+    ...conversations,
     peerId,
     setPeerId,
     displayName,
@@ -935,78 +541,42 @@ export function useWebPeer() {
     connecting,
     connected: connection.signaling === "online",
     online,
-    groups: [...groups, ...historyGroups],
-    target,
-    setTarget,
-    groupTarget,
-    setGroupTarget,
-    body,
-    setBody,
     forceRelay,
     modes,
     iceSummary,
     directReasons,
     checkingDirect,
-    retryDirect,
-    calls,
-    messages,
-    unreadConversations,
-    markConversationRead,
-    visible,
     logs,
     error,
     setError,
-    sending,
-    blocked,
     transfers,
-    knownPeers,
-    nameOf,
     connect,
     connectDht,
     disconnect,
-    disconnectDirect,
-    send,
-    createGroup,
-    changeGroup,
-    openPeer,
-    toggleForceRelay,
-    retry,
-    sendFile,
-    downloadFile,
-    toggleBlock,
-    deleteHistory,
-    exportHistory,
-    exportLogs,
     signalUrl,
     relayUrls: [relayUrl, ...relayUrls],
     call,
     groupCall,
     groupCalls,
-    callBusy,
     simulateMediaIceFailure,
-    toggleMediaIceFailure,
-    joinGroupCall,
-    leaveGroupCall,
-    muteGroupCall,
-    resumeGroupAudio,
-    dismissGroupCall,
-    startCall,
-    acceptCall,
-    endCall,
-    muteCall,
-    resumeCallAudio,
-    dismissCall: () => setCall(undefined),
     relayMetrics,
     relayPolicy,
-    selectRelayPolicy,
     leader,
-    volunteerSuperPeer,
     discovery,
     encryptionEnabled: encrypted || discovery === "dht",
     securityFingerprint,
     syncState,
-    importHistory,
-    verifyPeerKey,
     syncNow: () => sync.current?.flush(),
+    client,
+    sync,
+    log,
+    callStarting,
+    setForceRelay,
+    setCheckingDirect,
+    setDirectReasons,
+    setCallStarting,
+    setSimulateMediaIceFailure,
+    setCall,
+    setRelayPolicy,
   };
 }

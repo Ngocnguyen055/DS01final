@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { peerIdSchema } from "./protocol.ts";
+import { peerIdSchema } from "../protocol.ts";
 import type { CallState } from "./media.ts";
 
 export const MAX_GROUP_CALL_PEERS = 8;

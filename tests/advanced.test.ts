@@ -29,12 +29,12 @@ import {
   verifyOverlayRecord,
 } from "../src/shared/overlayProtocol.ts";
 import { RelayJournal } from "../src/relay/journal.ts";
-import { RelaySelector } from "../src/shared/relaySelection.ts";
+import { RelaySelector } from "../src/shared/transport/relaySelection.ts";
 import { createSignaling } from "../src/signaling/index.ts";
 import { createRelay } from "../src/relay/index.ts";
-import { MessageDelivery } from "../src/shared/messageDelivery.ts";
+import { MessageDelivery } from "../src/shared/chat/messageDelivery.ts";
 import { isPublicAddress } from "../src/server-kit/publicAddress.ts";
-import { MediaSession, type CallState } from "../src/shared/media.ts";
+import { MediaSession, type CallState } from "../src/shared/media/media.ts";
 
 class Store implements ChatStore, IdentityStore {
   rows: StoredMessage[] = [];

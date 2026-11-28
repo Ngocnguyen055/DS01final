@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { RTCFactory } from "./peerTypes.ts";
-import { randomUUID } from "./uuid.ts";
-import { inspectIceRoute, DEFAULT_ICE_SERVERS } from "./iceRoute.ts";
+import type { RTCFactory } from "../peerTypes.ts";
+import { randomUUID } from "../uuid.ts";
+import { inspectIceRoute, DEFAULT_ICE_SERVERS } from "../transport/iceRoute.ts";
 import { RelayMedia } from "./relayMedia.ts";
 import {
   mediaFrameSchema,

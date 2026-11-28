@@ -13,9 +13,9 @@ import {
   type PeerEvent,
   type StoredMessage,
 } from "../src/shared/index.ts";
-import { MessageDelivery } from "../src/shared/messageDelivery.ts";
-import { DirectTransport } from "../src/shared/directTransport.ts";
-import { FileTransfer, fileHash } from "../src/shared/fileTransfer.ts";
+import { MessageDelivery } from "../src/shared/chat/messageDelivery.ts";
+import { DirectTransport } from "../src/shared/transport/directTransport.ts";
+import { FileTransfer, fileHash } from "../src/shared/chat/fileTransfer.ts";
 import {
   FILE_CHUNK_BYTES,
   MAX_CHAT_ATTACHMENT_BYTES,

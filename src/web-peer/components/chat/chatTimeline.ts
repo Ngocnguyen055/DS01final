@@ -1,5 +1,5 @@
-import type { StoredMessage } from "../shared/peerTypes.ts";
-import type { CallRecord } from "./callHistory.ts";
+import type { StoredMessage } from "../../../shared/peerTypes.ts";
+import type { CallRecord } from "../../storage/callHistory.ts";
 
 export function chatTimeline<Bubble extends { rows: StoredMessage[] }>(
   bubbles: Bubble[],

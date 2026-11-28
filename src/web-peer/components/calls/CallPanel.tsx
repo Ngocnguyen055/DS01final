@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { CallState } from "../shared/media.ts";
+import type { CallState } from "../../../shared/media/media.ts";
 import { CallWindow } from "./CallWindow.tsx";
-import { Icon } from "./Icon.tsx";
+import { Icon } from "../Icon.tsx";
 
 export function CallPanel({
   call,

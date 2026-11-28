@@ -1,5 +1,5 @@
 import type { LoginSession } from "./auth.ts";
-import { WebStore } from "./store.ts";
+import { WebStore } from "../storage/store.ts";
 import {
   createAccountVault,
   unlockAccountVault,
@@ -7,13 +7,13 @@ import {
   openAccountData,
   AccountCapacityError,
 } from "./accountCrypto.ts";
-import { canonical, signIdentity } from "../shared/secure.ts";
+import { canonical, signIdentity } from "../../shared/secure.ts";
 import {
   accountVaultSchema,
   rotationStatement,
   type AccountVault,
   type EncryptedBackup,
-} from "../shared/accountProtocol.ts";
+} from "../../shared/accountProtocol.ts";
 
 export class AccountApiError extends Error {
   constructor(

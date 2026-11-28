@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { peerIdSchema } from "./protocol.ts";
+import { peerIdSchema } from "../protocol.ts";
 import { groupCallContextSchema } from "./groupCallProtocol.ts";
 
 export const mediaOpenSchema = z

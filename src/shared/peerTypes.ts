@@ -72,10 +72,10 @@ export type PeerEvent = {
     | "group-call"
     | "relay-metrics"
     | "superpeer";
-  call?: import("./media.ts").CallState;
-  groupCall?: import("./groupCallProtocol.ts").GroupCallState;
-  groupCalls?: import("./groupCallProtocol.ts").GroupCallRoom[];
-  relayMetrics?: import("./relaySelection.ts").RelaySample[];
+  call?: import("./media/media.ts").CallState;
+  groupCall?: import("./media/groupCallProtocol.ts").GroupCallState;
+  groupCalls?: import("./media/groupCallProtocol.ts").GroupCallRoom[];
+  relayMetrics?: import("./transport/relaySelection.ts").RelaySample[];
   leader?: { peerId: string; url: string; leaseUntil: number } | null;
   message?: StoredMessage;
   peers?: string[];

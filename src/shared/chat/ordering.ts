@@ -1,4 +1,4 @@
-import type { StoredMessage } from "./peerTypes.ts";
+import type { StoredMessage } from "../peerTypes.ts";
 
 export function orderMessages(rows: StoredMessage[]): StoredMessage[] {
   const chains = new Map<string, StoredMessage[]>();

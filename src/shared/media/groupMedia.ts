@@ -7,7 +7,7 @@ import {
   type GroupCallRoom,
   type GroupCallState,
 } from "./groupCallProtocol.ts";
-import type { Group } from "./protocol.ts";
+import type { Group } from "../protocol.ts";
 
 type Link = { session: MediaSession; state: CallState };
 export class GroupMediaSession {

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { CallState } from "../shared/media.ts";
+import type { CallState } from "../../../shared/media/media.ts";
 import {
   MAX_GROUP_CALL_PEERS,
   type GroupCallState,
-} from "../shared/groupCallProtocol.ts";
+} from "../../../shared/media/groupCallProtocol.ts";
 import { CallWindow } from "./CallWindow.tsx";
-import { Icon } from "./Icon.tsx";
+import { Icon } from "../Icon.tsx";
 
 function Participant({
   call,

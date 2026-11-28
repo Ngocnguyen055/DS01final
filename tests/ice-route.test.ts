@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { inspectIceRoute } from "../src/shared/iceRoute.ts";
-import { DirectTransport } from "../src/shared/directTransport.ts";
+import { inspectIceRoute } from "../src/shared/transport/iceRoute.ts";
+import { DirectTransport } from "../src/shared/transport/directTransport.ts";
 import type { RTCFactory } from "../src/shared/peerTypes.ts";
 
 function stats(localType = "host", remoteType = "srflx") {

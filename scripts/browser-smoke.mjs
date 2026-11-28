@@ -1148,7 +1148,7 @@ try {
   const fileId = fileRow.message.attachments[0].id;
   const saved = await evaluate(
     b,
-    `(async()=>{const {WebStore}=await import('/store.ts');const value=await new WebStore('user_qa-b').getFile(${JSON.stringify(fileId)});const digest=await crypto.subtle.digest('SHA-256',new Uint8Array(value.data).buffer);return {length:value.data.length,hash:[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('')};})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const value=await new WebStore('user_qa-b').getFile(${JSON.stringify(fileId)});const digest=await crypto.subtle.digest('SHA-256',new Uint8Array(value.data).buffer);return {length:value.data.length,hash:[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('')};})()`,
   );
   check(
     "browser file bytes persist in IndexedDB with matching SHA-256",
@@ -1530,7 +1530,7 @@ try {
   await Promise.all([loginAgain(b, "qa-b"), loginAgain(c, "qa-c")]);
   await evaluate(
     c,
-    `(async()=>{const {WebStore}=await import('/store.ts');const original=WebStore.prototype.put;const gate=new Promise(resolve=>window.qaReleaseGroup=resolve);WebStore.prototype.put=async function(row){if(row.status==='received'&&row.message.body==='QA-GROUP-BULK-RETRY'){window.qaGroupHeld=true;await gate;}return original.call(this,row);};window.qaRestoreGroupStore=()=>{WebStore.prototype.put=original;};})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const original=WebStore.prototype.put;const gate=new Promise(resolve=>window.qaReleaseGroup=resolve);WebStore.prototype.put=async function(row){if(row.status==='received'&&row.message.body==='QA-GROUP-BULK-RETRY'){window.qaGroupHeld=true;await gate;}return original.call(this,row);};window.qaRestoreGroupStore=()=>{WebStore.prototype.put=original;};})()`,
   );
   await fill(a, "textarea", "QA-DRAFT-DURING-BULK-RETRY");
   await evaluate(
@@ -1706,7 +1706,7 @@ try {
   await click(a, 'button[aria-label="Đóng chẩn đoán"]');
   await evaluate(
     b,
-    `(async()=>{const {WebStore}=await import('/store.ts');const original=WebStore.prototype.put;const gate=new Promise(resolve=>window.qaReleaseForwarded=resolve);WebStore.prototype.put=async function(row){if(row.status==='received'&&row.message.body==='QA-FORWARDED-WAITING-ACK')await gate;return original.call(this,row);};window.qaRestoreForwardedStore=()=>{WebStore.prototype.put=original;};})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const original=WebStore.prototype.put;const gate=new Promise(resolve=>window.qaReleaseForwarded=resolve);WebStore.prototype.put=async function(row){if(row.status==='received'&&row.message.body==='QA-FORWARDED-WAITING-ACK')await gate;return original.call(this,row);};window.qaRestoreForwardedStore=()=>{WebStore.prototype.put=original;};})()`,
   );
   await send(a, "QA-FORWARDED-WAITING-ACK");
   await until(
@@ -1766,7 +1766,7 @@ try {
   );
   await evaluate(
     a,
-    `(async()=>{const {WebStore}=await import('/store.ts');const original=WebStore.prototype.put;const starts=new Map();window.qaLatency=[];WebStore.prototype.put=async function(row){const m=row.message;if(m.senderId==='user_qa-a'&&m.body.startsWith('QA-LATENCY-')){if(row.status==='pending'&&!starts.has(m.messageId))starts.set(m.messageId,performance.now());const result=await original.call(this,row);if(row.status==='delivered'&&starts.has(m.messageId)){window.qaLatency.push({messageId:m.messageId,body:m.body,mode:m.mode,milliseconds:performance.now()-starts.get(m.messageId),serializedEnvelopeBytes:new TextEncoder().encode(JSON.stringify(m)).length});starts.delete(m.messageId);}return result;}return original.call(this,row);};window.qaRestoreLatency=()=>{WebStore.prototype.put=original;};})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const original=WebStore.prototype.put;const starts=new Map();window.qaLatency=[];WebStore.prototype.put=async function(row){const m=row.message;if(m.senderId==='user_qa-a'&&m.body.startsWith('QA-LATENCY-')){if(row.status==='pending'&&!starts.has(m.messageId))starts.set(m.messageId,performance.now());const result=await original.call(this,row);if(row.status==='delivered'&&starts.has(m.messageId)){window.qaLatency.push({messageId:m.messageId,body:m.body,mode:m.mode,milliseconds:performance.now()-starts.get(m.messageId),serializedEnvelopeBytes:new TextEncoder().encode(JSON.stringify(m)).length});starts.delete(m.messageId);}return result;}return original.call(this,row);};window.qaRestoreLatency=()=>{WebStore.prototype.put=original;};})()`,
   );
   const latencyComparison = {
     scope:

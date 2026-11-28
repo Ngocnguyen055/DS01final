@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DirectTransport, type SignalKind, type SignalPacket } from "../src/shared/directTransport.ts";
+import { DirectTransport, type SignalKind, type SignalPacket } from "../src/shared/transport/directTransport.ts";
 import { PeerClient } from "../src/shared/peer.ts";
-import { SignalingTransportError } from "../src/shared/signalingErrors.ts";
+import { SignalingTransportError } from "../src/shared/transport/signalingErrors.ts";
 import type { ChatStore, PeerConfig, StoredMessage } from "../src/shared/peerTypes.ts";
 import type { DeliveryMode } from "../src/shared/protocol.ts";
 

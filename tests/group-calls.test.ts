@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { io, type Socket } from "socket.io-client";
 import { createSignaling } from "../src/signaling/index.ts";
 import { createRelay } from "../src/relay/index.ts";
-import type { GroupCallRoom } from "../src/shared/groupCallProtocol.ts";
+import type { GroupCallRoom } from "../src/shared/media/groupCallProtocol.ts";
 
 const services: { close: () => Promise<void> }[] = [],
   clients: Socket[] = [];

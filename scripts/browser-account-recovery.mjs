@@ -409,7 +409,7 @@ try {
   );
   const identity = await evaluate(
     b,
-    `(async()=>{const {WebStore}=await import('/store.ts');const key=await new WebStore('user_recovery-b').getIdentity();return JSON.stringify(key.public)})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const key=await new WebStore('user_recovery-b').getIdentity();return JSON.stringify(key.public)})()`,
   );
   const fresh = await device(webUrl.replace("127.0.0.1", "localhost"));
   check(
@@ -455,7 +455,7 @@ try {
   );
   const restored = await evaluate(
     fresh,
-    `(async()=>{const {WebStore}=await import('/store.ts');const s=new WebStore('user_recovery-b'), key=await s.getIdentity(), keys=await s.getAccountKeys(), file=await s.getFile(${JSON.stringify(fileRow.message.attachments[0].id)});const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',file.data))].map(b=>b.toString(16).padStart(2,'0')).join('');return {public:JSON.stringify(key.public),extractable:key.encryptionPrivate.extractable||key.signingPrivate.extractable||keys.key.extractable,hash}})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const s=new WebStore('user_recovery-b'), key=await s.getIdentity(), keys=await s.getAccountKeys(), file=await s.getFile(${JSON.stringify(fileRow.message.attachments[0].id)});const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',file.data))].map(b=>b.toString(16).padStart(2,'0')).join('');return {public:JSON.stringify(key.public),extractable:key.encryptionPrivate.extractable||key.signingPrivate.extractable||keys.key.extractable,hash}})()`,
   );
   check(
     "new device recovers the same identity, nonextractable keys and exact file bytes",
@@ -522,7 +522,7 @@ try {
   );
   const safety = await evaluate(
     fresh,
-    `(async()=>{const {WebStore}=await import('/store.ts');const s=new WebStore('user_recovery-b'), original=JSON.stringify(await s.list()), snapshot=await s.snapshot();snapshot.files[0].data='A'.repeat(snapshot.files[0].data.length);let rejected=false;try{await s.restore(snapshot)}catch{rejected=true}return rejected&&original===JSON.stringify(await s.list())})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const s=new WebStore('user_recovery-b'), original=JSON.stringify(await s.list()), snapshot=await s.snapshot();snapshot.files[0].data='A'.repeat(snapshot.files[0].data.length);let rejected=false;try{await s.restore(snapshot)}catch{rejected=true}return rejected&&original===JSON.stringify(await s.list())})()`,
   );
   check(
     "corrupted archived files are rejected before replacing local history",
@@ -530,7 +530,7 @@ try {
   );
   const rollback = await evaluate(
     fresh,
-    `(async()=>{const {WebStore}=await import('/store.ts');const s=new WebStore('user_recovery-b'), original=JSON.stringify(await s.snapshot()), snapshot=await s.snapshot();snapshot.contacts.push({peerId:'user_new',name:'New',email:'',updatedAt:Date.now()});const write=Storage.prototype.setItem;let fail=true;Storage.prototype.setItem=function(k,v){if(fail&&k==='ds01-history-v1-user_recovery-b'){fail=false;throw new DOMException('Quota exceeded','QuotaExceededError')}return write.call(this,k,v)};let rejected=false;try{await s.restore(snapshot)}catch{rejected=true}finally{Storage.prototype.setItem=write}return rejected&&original===JSON.stringify(await s.snapshot())})()`,
+    `(async()=>{const {WebStore}=await import('/storage/store.ts');const s=new WebStore('user_recovery-b'), original=JSON.stringify(await s.snapshot()), snapshot=await s.snapshot();snapshot.contacts.push({peerId:'user_new',name:'New',email:'',updatedAt:Date.now()});const write=Storage.prototype.setItem;let fail=true;Storage.prototype.setItem=function(k,v){if(fail&&k==='ds01-history-v1-user_recovery-b'){fail=false;throw new DOMException('Quota exceeded','QuotaExceededError')}return write.call(this,k,v)};let rejected=false;try{await s.restore(snapshot)}catch{rejected=true}finally{Storage.prototype.setItem=write}return rejected&&original===JSON.stringify(await s.snapshot())})()`,
   );
   check(
     "browser quota failure rolls back history and contact changes",

@@ -1,7 +1,7 @@
-import type { DeliveryMode } from "./protocol.ts";
-import type { RTCFactory } from "./peerTypes.ts";
+import type { DeliveryMode } from "../protocol.ts";
+import type { RTCFactory } from "../peerTypes.ts";
 import { inspectIceRoute, DEFAULT_ICE_SERVERS } from "./iceRoute.ts";
-import { randomUUID } from "./uuid.ts";
+import { randomUUID } from "../uuid.ts";
 import { SignalingTransportError } from "./signalingErrors.ts";
 export type SignalKind = "request" | "offer" | "answer" | "ice" | "media";
 export type SignalPacket = {
