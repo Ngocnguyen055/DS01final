@@ -187,12 +187,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   margin: 4px 28px 16px;
   font-size: 13px;
 }
 .log-heading > strong {
   font-weight: 550;
+}
+.log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .log-console {
   background: var(--sidebar);

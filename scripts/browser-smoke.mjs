@@ -207,7 +207,7 @@ try {
       .map((row) => ({
         name: row.name,
         pid: row.child.pid,
-        running: row.child.exitCode === null,
+        running: row.child.exitCode === null && row.child.signalCode === null,
       })),
     logs: ["signal", "primary", "backup"].map((name) => ({
       name,
@@ -1840,6 +1840,29 @@ try {
       ]),
     ),
   );
+  await fill(operator, "#filter", "");
+  await click(b, ".diagnostics-link");
+  const logViews = [
+    { session: b, pane: "#peer-log", button: '[aria-controls="peer-log"]' },
+    {
+      session: operator,
+      pane: 'pre[aria-label="Nhật ký primary"]',
+      button: "#pause-logs",
+    },
+  ];
+  for (const { session, pane, button } of logViews) {
+    await evaluate(session, `
+      window.qaLogPane = document.querySelector(${JSON.stringify(pane)});
+      qaLogPane.scrollTop = 120;
+      window.qaLogScroll = qaLogPane.scrollTop;
+      window.qaLogText = qaLogPane.textContent;
+    `);
+    await until(
+      () => evaluate(session, `qaLogScroll > 0 &&
+        document.querySelector(${JSON.stringify(button)}).textContent.trim() === 'Tiếp tục cập nhật'`),
+      `scrolling pauses ${pane}`,
+    );
+  }
   await stop(primary);
   await pause(700);
   await send(a, "QA-BACKUP-RELAY");
@@ -1855,6 +1878,34 @@ try {
     backup.message.mode === "RELAY" &&
       logs.backup.includes(backup.message.messageId),
   );
+  await until(
+    () => evaluate(operator, `[...document.querySelectorAll('#processes tr')].some(row =>
+      row.cells[0].textContent === 'primary' && row.cells[2].textContent === 'Đã dừng')`),
+    "dashboard process status updates while logs are paused",
+  );
+  for (const { session, pane, button } of logViews) {
+    check(
+      `incoming activity preserves the paused log and scroll position in ${pane}`,
+      await evaluate(session, `qaLogPane.isConnected &&
+        qaLogPane.scrollTop === qaLogScroll && qaLogPane.textContent === qaLogText`),
+    );
+    await click(session, button);
+  }
+  const backupMessageId = JSON.stringify(backup.message.messageId);
+  await Promise.all([
+    until(
+      () => evaluate(b, `document.querySelector('#peer-log').textContent
+        .includes('RELAY RECEIVE ' + ${backupMessageId})`),
+      "resumed peer log shows new message",
+    ),
+    until(
+      () => evaluate(operator, `document.querySelector('#logs').textContent
+        .includes('FORWARD ' + ${backupMessageId})`),
+      "resumed dashboard log shows new forwarding",
+    ),
+  ]);
+  check("resuming both log views displays events recorded while paused", true);
+  await click(b, '.diagnostics button[aria-label="Đóng chẩn đoán"]');
   await choose(a, "Team QA");
   await screenshot(a, "ui-chat-desktop.png");
   await click(a, ".diagnostics-link");

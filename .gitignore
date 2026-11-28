@@ -30,6 +30,7 @@ DS01-runtime/
 *.rej
 
 # Local tooling and operating-system files
+/hoc-bao-ve/
 .codex/
 .agents/
 .aws/

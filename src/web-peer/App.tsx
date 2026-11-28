@@ -9,6 +9,53 @@ import { chatTimeline } from "./chatTimeline.ts";
 import { MAX_GROUP_CALL_PEERS } from "../shared/groupCallProtocol.ts";
 import { AdvancedPanel } from "./AdvancedPanel.tsx";
 import { Icon } from "./Icon.tsx";
+function PeerLog({ logs, onExport }: { logs: string[]; onExport: () => void }) {
+  const [pausedLogs, setPausedLogs] = useState<string[] | null>(null);
+  const logPane = useRef<HTMLPreElement>(null);
+  const visibleLogs = pausedLogs ?? logs;
+  const togglePause = () => {
+    if (pausedLogs === null) {
+      setPausedLogs(logs);
+    } else {
+      if (logPane.current) logPane.current.scrollTop = 0;
+      setPausedLogs(null);
+    }
+  };
+  return (
+    <>
+      <div className="log-heading">
+        <strong>Nhật ký peer</strong>
+        <div className="log-actions">
+          <button
+            className="secondary-button small"
+            aria-controls="peer-log"
+            onClick={togglePause}
+          >
+            {pausedLogs === null ? "Tạm dừng log" : "Tiếp tục cập nhật"}
+          </button>
+          <button className="secondary-button small" onClick={onExport}>
+            <Icon name="download" size={15} /> Xuất log
+          </button>
+        </div>
+      </div>
+      <pre
+        id="peer-log"
+        className="log-console"
+        ref={logPane}
+        tabIndex={0}
+        aria-label="Nội dung nhật ký peer"
+        onScroll={(event) => {
+          if (event.currentTarget.scrollTop > 0 && pausedLogs === null)
+            setPausedLogs(logs);
+        }}
+      >
+        {visibleLogs.length
+          ? visibleLogs.join("\n")
+          : "Chưa có sự kiện. Kết nối để bắt đầu quan sát."}
+      </pre>
+    </>
+  );
+}
 function UnreadDot() {
   return (
     <span
@@ -166,7 +213,7 @@ export function App() {
     const items = () =>
       Array.from(
         modal.querySelectorAll<HTMLElement>(
-          "button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href]",
+          'button:not(:disabled),input:not(:disabled),textarea:not(:disabled),a[href],[tabindex="0"]',
         ),
       ).filter((item) => item.getClientRects().length > 0);
     if (!modal.contains(document.activeElement)) items()[0]?.focus();
@@ -1273,17 +1320,7 @@ export function App() {
               </div>
             )}
             <AdvancedPanel peer={p} />
-            <div className="log-heading">
-              <strong>Nhật ký peer</strong>
-              <button className="secondary-button small" onClick={p.exportLogs}>
-                <Icon name="download" size={15} /> Xuất log
-              </button>
-            </div>
-            <pre className="log-console">
-              {p.logs.length
-                ? p.logs.join("\n")
-                : "Chưa có sự kiện. Kết nối để bắt đầu quan sát."}
-            </pre>
+            <PeerLog key={p.peerId} logs={p.logs} onExport={p.exportLogs} />
             <p className="diagnostic-note">
               DIRECT: DataChannel giữa các peer. TURN: DataChannel qua máy chủ
               TURN. RELAY: chuyển tiếp qua server ứng dụng. Đã chuyển tiếp:
